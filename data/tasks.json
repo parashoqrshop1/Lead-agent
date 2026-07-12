@@ -1,8 +1,77 @@
 [
   {
-    "id": "e3a714d9",
     "task_type": "hyperlocal",
     "title": "Hyperlocal niches @ Akbarpur",
+    "id": "1f4c20e8",
+    "status": "done",
+    "params": {
+      "city": "Akbarpur",
+      "niches": [
+        "clothing",
+        "jeweller"
+      ],
+      "limit": 40,
+      "deep_local": true,
+      "max_localities": 8
+    },
+    "result_summary": "[DEMO samples] Akbarpur: 12 unique leads (12 with social) · niches=clothing,jeweller",
+    "error": null,
+    "created_at": "2026-07-12 13:07:28 UTC",
+    "updated_at": "2026-07-12 13:07:28 UTC",
+    "lead_ids": [
+      "6f6624c3",
+      "86f59321",
+      "ec4af98b",
+      "ab1da419",
+      "3aa86159",
+      "08f1d821",
+      "2261f3da",
+      "a5246cab",
+      "4b9ea961",
+      "0c8cab41",
+      "01723d03",
+      "f991a498"
+    ]
+  },
+  {
+    "task_type": "hyperlocal",
+    "title": "Hyperlocal niches @ Akbarpur",
+    "id": "ae26cefa",
+    "status": "done",
+    "params": {
+      "city": "Akbarpur",
+      "niches": [
+        "clothing",
+        "jeweller"
+      ],
+      "limit": 40,
+      "deep_local": true,
+      "max_localities": 8
+    },
+    "result_summary": "Hyperlocal Akbarpur: 13 unique niche leads (13 with social) · niches=clothing,jeweller",
+    "error": null,
+    "created_at": "2026-07-12 13:06:23 UTC",
+    "updated_at": "2026-07-12 13:06:23 UTC",
+    "lead_ids": [
+      "3493adf3",
+      "f3f8cd91",
+      "abddd010",
+      "d047624b",
+      "e1279c3d",
+      "5574a304",
+      "85a0a03f",
+      "1bc31185",
+      "16aaf20a",
+      "6041f853",
+      "1bff651f",
+      "daaf0d0e",
+      "2dd47619"
+    ]
+  },
+  {
+    "task_type": "hyperlocal",
+    "title": "Hyperlocal niches @ Akbarpur",
+    "id": "e3a714d9",
     "status": "done",
     "params": {
       "city": "Akbarpur",
@@ -35,9 +104,9 @@
     ]
   },
   {
-    "id": "ee9d1fc7",
     "task_type": "hyperlocal",
     "title": "Hyperlocal niches @ Akbarpur",
+    "id": "ee9d1fc7",
     "status": "done",
     "params": {
       "city": "Akbarpur",
@@ -84,9 +153,9 @@
     ]
   },
   {
-    "id": "474208f0",
     "task_type": "hyperlocal",
     "title": "Hyperlocal niches @ Akbarpur",
+    "id": "474208f0",
     "status": "done",
     "params": {
       "city": "Akbarpur",
@@ -126,9 +195,9 @@
     ]
   },
   {
-    "id": "531901bd",
     "task_type": "hyperlocal",
     "title": "Hyperlocal niches @ Akbarpur",
+    "id": "531901bd",
     "status": "done",
     "params": {
       "city": "Akbarpur",
@@ -150,9 +219,9 @@
     ]
   },
   {
-    "id": "da6e3008",
     "task_type": "bulk_campaign",
     "title": "Bulk: 2 cities × 2 niches",
+    "id": "da6e3008",
     "status": "done",
     "params": {
       "region": "india",

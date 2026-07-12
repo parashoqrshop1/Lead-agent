@@ -167,12 +167,10 @@ def run_hyperlocal_pipeline(
     drop_chains: bool = True,
     sync_sheets: bool = True,
 ) -> Dict[str, Any]:
-    """
-    Dedicated niche hunt inside ONE city/town across market localities.
-    Finds social-media shops (ads or organic product posts) for more local leads.
-    """
+    """Hunt niches in one city/town across local markets. Never returns empty silently."""
     from config.niches import REGIONS
     from config.settings import get_settings
+    from agents.storage import dedupe_leads_list
 
     task = add_task(
         AgentTask(
@@ -192,12 +190,12 @@ def run_hyperlocal_pipeline(
     mode = get_settings().get("scraper_mode", "demo")
     all_leads: List[ShopLead] = []
     errors: List[str] = []
+    fallback_demo = False
 
     try:
         if mode == "demo":
             from agents.light_scrape import hyperlocal_demo_leads
 
-            # per_niche is treated as volume target per niche; overall unique often higher
             all_leads = hyperlocal_demo_leads(
                 city=city,
                 niches=niches,
@@ -208,7 +206,7 @@ def run_hyperlocal_pipeline(
         else:
             from agents.light_scrape import light_search_leads
 
-            per = max(10, limit // max(1, len(niches)))
+            per = max(12, limit // max(1, len(niches) or 1))
             for niche in niches:
                 try:
                     found = light_search_leads(
@@ -221,18 +219,36 @@ def run_hyperlocal_pipeline(
                         max_localities=max_localities,
                         queries_per_place=3,
                     )
-                    all_leads.extend(found)
+                    all_leads.extend(found or [])
                 except Exception as e:
                     errors.append(f"{niche}: {e}")
 
-        from agents.storage import dedupe_leads_list
+            if not all_leads:
+                fallback_demo = True
+                from agents.light_scrape import hyperlocal_demo_leads
 
-        unique = dedupe_leads_list(filter_icp(qualify_batch(all_leads), drop_chains=drop_chains))
+                errors.append(
+                    "REAL search returned 0 leads (check GEMINI_API_KEY / network). "
+                    "Loaded sample leads so UI is not empty."
+                )
+                all_leads = hyperlocal_demo_leads(
+                    city=city,
+                    niches=niches,
+                    country=country or "India",
+                    per_niche=max(limit, 30),
+                    save=False,
+                )
+
+        unique = dedupe_leads_list(
+            filter_icp(qualify_batch(all_leads), drop_chains=drop_chains)
+        )
         if analyze_ads and unique:
-            unique = enrich_ads_batch(unique, use_llm=False, save=False)
-            unique = dedupe_leads_list(unique)
+            try:
+                unique = enrich_ads_batch(unique, use_llm=False, save=False)
+                unique = dedupe_leads_list(unique)
+            except Exception as e:
+                errors.append(f"ads: {e}")
 
-        # Prefer social + product showcase
         unique.sort(
             key=lambda l: (
                 1 if (l.instagram or l.facebook) else 0,
@@ -243,7 +259,13 @@ def run_hyperlocal_pipeline(
         )
 
         if unique:
-            upsert_leads(unique)
+            added, updated = upsert_leads(unique)
+            log_activity(
+                "hyperlocal_saved",
+                {"added": added, "updated": updated, "total": len(unique)},
+            )
+        else:
+            errors.append("No leads after processing")
 
         sheets_result = None
         if sync_sheets:
@@ -257,8 +279,9 @@ def run_hyperlocal_pipeline(
                 sheets_result = {"ok": False, "error": str(e)}
 
         social_n = sum(1 for l in unique if l.instagram or l.facebook)
+        mode_note = "DEMO samples" if (mode == "demo" or fallback_demo) else "REAL search"
         summary = (
-            f"Hyperlocal {city}: {len(unique)} unique niche leads "
+            f"[{mode_note}] {city}: {len(unique)} unique leads "
             f"({social_n} with social) · niches={','.join(niches)}"
         )
         update_task(
@@ -267,6 +290,7 @@ def run_hyperlocal_pipeline(
             result_summary=summary,
             lead_ids=[l.id for l in unique[:200]],
         )
+        log_activity("hyperlocal_done", {"summary": summary, "errors": errors[:5]})
         return {
             "task_id": task.id,
             "leads": unique,
@@ -275,10 +299,36 @@ def run_hyperlocal_pipeline(
             "errors": errors,
             "sheets": sheets_result,
             "summary": summary,
+            "mode": mode,
+            "fallback_demo": fallback_demo,
         }
     except Exception as e:
         update_task(task.id, status="failed", error=str(e))
-        raise
+        log_activity("hyperlocal_failed", {"error": str(e)})
+        # last-resort non-empty response
+        try:
+            from agents.light_scrape import hyperlocal_demo_leads
+
+            emergency = hyperlocal_demo_leads(
+                city=city or "Akbarpur",
+                niches=niches or ["clothing"],
+                country="India",
+                per_niche=20,
+                save=True,
+            )
+            return {
+                "task_id": task.id,
+                "leads": emergency,
+                "count": len(emergency),
+                "social_count": sum(1 for l in emergency if l.instagram or l.facebook),
+                "errors": [str(e)],
+                "sheets": None,
+                "summary": f"[EMERGENCY DEMO] {len(emergency)} leads after error: {e}",
+                "mode": mode,
+                "fallback_demo": True,
+            }
+        except Exception as e2:
+            raise RuntimeError(f"{e} | emergency also failed: {e2}") from e
 
 
 def run_bulk_pipeline(

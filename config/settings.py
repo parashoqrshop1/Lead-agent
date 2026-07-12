@@ -57,14 +57,20 @@ def _secret(key: str, default: str = "") -> str:
 def get_settings() -> dict[str, Any]:
     """Fresh each call — important after secrets changes on Streamlit Cloud."""
     model = _secret("LLM_MODEL", "gemini-2.0-flash")
-    # Prefer real mode when Gemini key exists; otherwise demo.
-    default_mode = "light" if _secret("GEMINI_API_KEY") else "demo"
-    scraper_mode = (_secret("SCRAPER_MODE", default_mode) or default_mode).lower()
+    api_key = (_secret("GEMINI_API_KEY") or "").strip()
+    requested_mode = (_secret("SCRAPER_MODE", "") or "").strip().lower()
+    # Real mode only if user asked for light AND key exists; else demo (never silent empty).
+    if requested_mode in ("light", "gemini_web", "open_source", "cloud_api") and api_key:
+        scraper_mode = requested_mode
+    elif requested_mode in ("light", "gemini_web", "open_source", "cloud_api") and not api_key:
+        scraper_mode = "demo"  # will warn in UI
+    elif requested_mode == "demo" or not requested_mode:
+        scraper_mode = "demo"
+    else:
+        scraper_mode = requested_mode or "demo"
 
-    api_key = _secret("GEMINI_API_KEY") or _secret("GROQ_API_KEY") or _secret("OPENAI_API_KEY")
-    # if model implies gemini, prefer gemini key only
-    if "gemini" in model or model.startswith("google_genai"):
-        api_key = _secret("GEMINI_API_KEY") or api_key
+    if not api_key:
+        api_key = (_secret("GROQ_API_KEY") or _secret("OPENAI_API_KEY") or "").strip()
 
     sa_json = _secret("GOOGLE_SERVICE_ACCOUNT_JSON")
     if not sa_json:

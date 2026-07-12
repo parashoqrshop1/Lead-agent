@@ -258,12 +258,69 @@ def page_leads(storage, experience, ads, scoring):
     )
 
 
-def page_find(orchestrator, scraper):
+def page_find(orchestrator, scraper, storage):
     st.markdown("### ⚡ Find leads")
     h = scraper.health_check()
-    st.caption(f"Mode: `{h.get('scraper_mode')}` · Gemini key: {'✅' if h.get('llm_key_present') else '❌'}")
+    mode = h.get("scraper_mode")
+    has_key = h.get("llm_key_present")
+    st.caption(f"Mode: `{mode}` · Gemini key: {'✅' if has_key else '❌'}")
+
+    # Loud mode banner so user knows demo vs real
+    if mode == "demo":
+        st.error(
+            "⚠️ Currently DEMO mode — sample practice leads only.\n\n"
+            "For REAL shops set Secrets:\n"
+            '`SCRAPER_MODE = "light"` + `GEMINI_API_KEY = "your_key"` then Reboot.'
+        )
+    elif mode in ("light", "gemini_web") and has_key:
+        st.success("✅ REAL mode ready (light + Gemini key). Local hunt uses live public search.")
+    else:
+        st.warning("Mode is not fully ready for real scrape. Check Secrets.")
 
     from config.niches import REGIONS
+
+    # Always-visible emergency generator (never empty)
+    if st.button("⚡ Generate leads NOW (guaranteed)", type="primary", use_container_width=True):
+        with st.spinner("Generating leads…"):
+            try:
+                result = orchestrator.run_hyperlocal_pipeline(
+                    region="india",
+                    city="Akbarpur",
+                    niches=["cafe", "jeweller", "clothing", "shoes", "multi_retail"],
+                    limit=60,
+                    deep_local=True,
+                    max_localities=8,
+                    analyze_ads=True,
+                    drop_chains=True,
+                    sync_sheets=False,
+                )
+                st.session_state["last_hunt"] = result
+                n = len(storage.load_leads())
+                st.success(f"{result.get('summary')} · Stored total now: {n}")
+                if result.get("errors"):
+                    for e in result["errors"][:6]:
+                        st.warning(str(e))
+                # show table immediately
+                leads = storage.load_leads()
+                if leads:
+                    import pandas as pd
+
+                    rows = [
+                        {
+                            "score": l.lead_score,
+                            "name": l.business_name,
+                            "city": l.city,
+                            "phone": l.phone or l.whatsapp,
+                            "instagram": l.instagram,
+                            "niche": l.niche,
+                        }
+                        for l in sorted(leads, key=lambda x: x.lead_score or 0, reverse=True)[:40]
+                    ]
+                    st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+                else:
+                    st.error("Still 0 stored leads after run — report this.")
+            except Exception as e:
+                st.exception(e)
 
     tab_local, tab_bulk, tab_real = st.tabs(["📍 Local niches", "🔥 Multi-city", "🚀 Go real"])
 
@@ -315,13 +372,36 @@ def page_find(orchestrator, scraper):
                             max_localities=areas,
                             analyze_ads=True,
                             drop_chains=True,
-                            sync_sheets=False,  # avoid sheets crash if libs missing
+                            sync_sheets=False,
                         )
-                        st.success(result["summary"])
-                        st.session_state["nav"] = "Leads"
-                        st.rerun()
+                        st.session_state["last_hunt"] = result
+                        n = len(storage.load_leads())
+                        st.success(f"{result.get('summary')} · Total stored: {n}")
+                        if result.get("errors"):
+                            for e in result["errors"][:8]:
+                                st.warning(str(e))
+                        leads = [l for l in storage.load_leads() if not l.is_branded_chain]
+                        if leads:
+                            import pandas as pd
+
+                            rows = [
+                                {
+                                    "score": l.lead_score,
+                                    "name": l.business_name,
+                                    "city": l.city,
+                                    "phone": l.phone or l.whatsapp,
+                                    "ig": (l.instagram or "")[:40],
+                                    "niche": l.niche,
+                                    "ads": l.ad_style,
+                                }
+                                for l in sorted(leads, key=lambda x: x.lead_score or 0, reverse=True)[:50]
+                            ]
+                            st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+                            st.info("Open top menu → **Leads** to pitch WhatsApp.")
+                        else:
+                            st.error("0 leads stored. Tap 'Generate leads NOW' above.")
                     except Exception as e:
-                        st.error(str(e))
+                        st.exception(e)
 
     with tab_bulk:
         region = st.selectbox(
@@ -471,11 +551,11 @@ def main():
     page = st.session_state["nav"]
     try:
         if page == "Home":
-            page_home(storage, scraper)
+            page_home(storage, scraper, orchestrator)
         elif page == "Leads":
             page_leads(storage, experience, ads, scoring)
         elif page == "Find leads":
-            page_find(orchestrator, scraper)
+            page_find(orchestrator, scraper, storage)
         elif page == "Guide":
             page_guide(scoring, storage)
         else:

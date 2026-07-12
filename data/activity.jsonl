@@ -13,3 +13,12 @@
 {"ts": "2026-07-12 11:59:46 UTC", "event": "add_task", "details": {"id": "e3a714d9", "type": "hyperlocal"}}
 {"ts": "2026-07-12 11:59:46 UTC", "event": "upsert_leads", "details": {"added": 0, "updated": 13, "collapsed": 0, "total": 25}}
 {"ts": "2026-07-12 12:35:58 UTC", "event": "upsert_leads", "details": {"added": 1, "updated": 0, "collapsed": 0, "total": 1}}
+{"ts": "2026-07-12 13:06:23 UTC", "event": "search_start", "details": {"city": "Akbarpur", "niche": "clothing", "mode": "demo"}}
+{"ts": "2026-07-12 13:06:23 UTC", "event": "upsert_leads", "details": {"added": 7, "updated": 3, "collapsed": 0, "total": 7}}
+{"ts": "2026-07-12 13:06:23 UTC", "event": "search_done", "details": {"count": 10}}
+{"ts": "2026-07-12 13:06:23 UTC", "event": "add_task", "details": {"id": "ae26cefa", "type": "hyperlocal"}}
+{"ts": "2026-07-12 13:06:23 UTC", "event": "upsert_leads", "details": {"added": 13, "updated": 0, "collapsed": 0, "total": 13}}
+{"ts": "2026-07-12 13:07:28 UTC", "event": "add_task", "details": {"id": "1f4c20e8", "type": "hyperlocal"}}
+{"ts": "2026-07-12 13:07:28 UTC", "event": "upsert_leads", "details": {"added": 12, "updated": 0, "collapsed": 0, "total": 12}}
+{"ts": "2026-07-12 13:07:28 UTC", "event": "hyperlocal_saved", "details": {"added": 12, "updated": 0, "total": 12}}
+{"ts": "2026-07-12 13:07:28 UTC", "event": "hyperlocal_done", "details": {"summary": "[DEMO samples] Akbarpur: 12 unique leads (12 with social) · niches=clothing,jeweller", "errors": []}}
