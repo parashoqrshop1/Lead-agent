@@ -11,26 +11,10 @@ ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-import pandas as pd
 import streamlit as st
+import pandas as pd
 
-from agents.ads_agent import analyze_ads_heuristic
-from agents.experience_agent import build_experience_proposal, draft_quick_outreach
-from agents.lead_schema import ShopLead
-from agents.orchestrator import run_bulk_pipeline, run_full_pipeline, run_hyperlocal_pipeline
-from agents.scraper_agent import health_check, search_leads, suggest_cities, suggest_niches
-from agents.scoring import SCORE_FACTOR_GUIDE, factors_table_for_lead
-from agents.sheets_store import push_leads_to_sheets, sheets_status
-from agents.storage import (
-    delete_lead,
-    export_leads_excel,
-    leads_dataframe,
-    load_leads,
-    purge_duplicate_leads,
-    recent_activity,
-    update_lead,
-    upsert_leads,
-)
+# Keep startup imports minimal (Streamlit Cloud segfaults on heavy native stacks).
 from config.niches import REGIONS, niche_label
 from config.settings import LEAD_STATUSES, get_settings
 
@@ -116,12 +100,55 @@ def inject_css():
     )
 
 
+
+# ---------- lazy loaders (avoid heavy imports at process start) ----------
+
+def _storage():
+    from agents import storage as m
+    return m
+
+
+def _scoring():
+    from agents import scoring as m
+    return m
+
+
+def _scraper():
+    from agents import scraper_agent as m
+    return m
+
+
+def _orchestrator():
+    from agents import orchestrator as m
+    return m
+
+
+def _experience():
+    from agents import experience_agent as m
+    return m
+
+
+def _ads():
+    from agents import ads_agent as m
+    return m
+
+
+def _sheets():
+    from agents import sheets_store as m
+    return m
+
+
+def _lead_schema():
+    from agents import lead_schema as m
+    return m
+
+
 def score_pill(score: int) -> str:
     cls = "pill-hi" if score >= 70 else "pill-mid" if score >= 45 else "pill-lo"
     return f'<span class="pill {cls}">{score}/100</span>'
 
 
-def lead_card_html(lead: ShopLead) -> str:
+def lead_card_html(lead) -> str:
     ads = ""
     if lead.runs_ads:
         style = lead.ad_style or "ads"
@@ -142,8 +169,8 @@ def lead_card_html(lead: ShopLead) -> str:
 
 def page_home():
     st.markdown("### 🏠 Home")
-    df = leads_dataframe()
-    h = health_check()
+    df = _storage().leads_dataframe()
+    h = _scraper().health_check()
     total = 0 if df.empty else len(df)
     product_ads = 0
     high = 0
@@ -183,7 +210,7 @@ def page_home():
         )
 
     st.markdown("#### Top leads")
-    leads = sorted(load_leads(), key=lambda x: x.lead_score, reverse=True)
+    leads = sorted(_storage().load_leads(), key=lambda x: x.lead_score, reverse=True)
     leads = [l for l in leads if not l.is_branded_chain][:5]
     if not leads:
         st.caption("No leads yet — tap **Find more leads**.")
@@ -197,7 +224,7 @@ def page_home():
 
 def page_leads():
     st.markdown("### 📋 Leads")
-    leads = [l for l in load_leads() if not l.is_branded_chain]
+    leads = [l for l in _storage().load_leads() if not l.is_branded_chain]
     if not leads:
         st.warning("No leads yet.")
         if st.button("Find leads now", type="primary", use_container_width=True):
@@ -257,8 +284,9 @@ def page_leads():
     st.write(f"**Pain:** {lead.pain_points or '—'}")
 
     with st.expander("Why this score?", expanded=False):
-        factors = factors_table_for_lead(lead)
+        factors = _scoring().factors_table_for_lead(lead)
         if factors:
+            import pandas as pd
             st.dataframe(pd.DataFrame(factors), use_container_width=True, hide_index=True)
         st.caption(lead.score_breakdown or "")
 
@@ -270,35 +298,35 @@ def page_leads():
     )
     notes = st.text_area("Notes", value=lead.notes or "", height=80)
     if st.button("💾 Save", type="primary", use_container_width=True):
-        update_lead(lead.id, status=status, notes=notes)
+        _storage().update_lead(lead.id, status=status, notes=notes)
         st.success("Saved")
         st.rerun()
 
     if st.button("✨ WhatsApp pitch", use_container_width=True):
-        prop = build_experience_proposal(lead, use_llm=False)
+        prop = _experience().build_experience_proposal(lead, use_llm=False)
         st.session_state["wa_draft"] = prop.outreach_whatsapp
         st.session_state["email_draft"] = prop.outreach_email
         st.success(prop.package_name)
 
     if "wa_draft" in st.session_state:
-        st.text_area("Copy WhatsApp", value=st.session_state.get("wa_draft") or draft_quick_outreach(lead), height=180)
+        st.text_area("Copy WhatsApp", value=st.session_state.get("wa_draft") or _experience().draft_quick_outreach(lead), height=180)
         st.text_area("Email draft", value=st.session_state.get("email_draft") or "", height=140)
     else:
-        st.text_area("Quick WhatsApp", value=draft_quick_outreach(lead), height=160)
+        st.text_area("Quick WhatsApp", value=_experience().draft_quick_outreach(lead), height=160)
 
     b1, b2 = st.columns(2)
     with b1:
         if st.button("📣 Re-check ads", use_container_width=True):
-            upsert_leads([analyze_ads_heuristic(lead)])
+            _storage().upsert_leads([_ads().analyze_ads_heuristic(lead)])
             st.rerun()
     with b2:
         if st.button("🗑 Delete", use_container_width=True):
-            delete_lead(lead.id)
+            _storage().delete_lead(lead.id)
             st.session_state.pop("selected_lead_id", None)
             st.rerun()
 
     if st.button("🧹 Remove duplicate leads", use_container_width=True):
-        result = purge_duplicate_leads()
+        result = _storage().purge_duplicate_leads()
         st.success(
             f"Cleaned: {result['before']} → {result['after']} "
             f"(removed {result['removed']} duplicates)"
@@ -307,7 +335,7 @@ def page_leads():
 
     st.download_button(
         "⬇️ Download CSV",
-        data=leads_dataframe().to_csv(index=False).encode("utf-8"),
+        data=_storage().leads_dataframe().to_csv(index=False).encode("utf-8"),
         file_name="leads.csv",
         mime="text/csv",
         use_container_width=True,
@@ -316,7 +344,7 @@ def page_leads():
 
 def page_find():
     st.markdown("### ⚡ Find leads")
-    h = health_check()
+    h = _scraper().health_check()
     st.caption(f"Mode: `{h['scraper_mode']}` · Gemini: {'✅' if h['llm_key_present'] else '❌'}")
 
     tab_local, tab_bulk, tab_one, tab_real = st.tabs(
@@ -337,7 +365,7 @@ Finds independent shops that already use **Instagram / Facebook**
             format_func=lambda x: REGIONS[x]["label"],
             key="loc_region",
         )
-        city_opts = suggest_cities(region)
+        city_opts = _scraper().suggest_cities(region)
         # put smaller towns first if present
         default_city = "Akbarpur" if "Akbarpur" in city_opts else city_opts[0]
         city = st.selectbox(
@@ -351,7 +379,7 @@ Finds independent shops that already use **Instagram / Facebook**
         if city == "Other…":
             city = st.text_input("Type town / city", value="Akbarpur", key="loc_city_custom")
 
-        niche_opts = suggest_niches()
+        niche_opts = _scraper().suggest_niches()
         niche_ids = [n["id"] for n in niche_opts if n["id"] != "other_independent"]
         niches = st.multiselect(
             "Niches to hunt",
@@ -374,7 +402,7 @@ Finds independent shops that already use **Instagram / Facebook**
             else:
                 with st.spinner(f"Hunting {', '.join(niches)} around {city}…"):
                     try:
-                        result = run_hyperlocal_pipeline(
+                        result = _orchestrator().run_hyperlocal_pipeline(
                             region=region,
                             city=city,
                             niches=niches,
@@ -402,14 +430,14 @@ Finds independent shops that already use **Instagram / Facebook**
             format_func=lambda x: REGIONS[x]["label"],
             key="bulk_region",
         )
-        city_opts = suggest_cities(region)
+        city_opts = _scraper().suggest_cities(region)
         cities = st.multiselect(
             "Cities",
             city_opts,
             default=[c for c in ["Lucknow", "Kanpur", "Akbarpur", "Jaipur", "Pune"] if c in city_opts][:4]
             or city_opts[:3],
         )
-        niche_opts = suggest_niches()
+        niche_opts = _scraper().suggest_niches()
         niche_ids = [n["id"] for n in niche_opts if n["id"] != "other_independent"]
         niches = st.multiselect(
             "Niches",
@@ -424,7 +452,7 @@ Finds independent shops that already use **Instagram / Facebook**
             else:
                 with st.spinner("Finding leads…"):
                     try:
-                        result = run_bulk_pipeline(
+                        result = _orchestrator().run_bulk_pipeline(
                             region=region,
                             cities=cities,
                             niches=niches,
@@ -446,10 +474,10 @@ Finds independent shops that already use **Instagram / Facebook**
             format_func=lambda x: REGIONS[x]["label"],
             key="one_region",
         )
-        city = st.selectbox("City", suggest_cities(region) + ["Other…"], key="one_city")
+        city = st.selectbox("City", _scraper().suggest_cities(region) + ["Other…"], key="one_city")
         if city == "Other…":
             city = st.text_input("City name", value="Akbarpur")
-        niche_opts = suggest_niches()
+        niche_opts = _scraper().suggest_niches()
         niche = st.selectbox(
             "Niche",
             [n["id"] for n in niche_opts],
@@ -459,7 +487,7 @@ Finds independent shops that already use **Instagram / Facebook**
         if st.button("Run one city", type="primary", use_container_width=True):
             with st.spinner("Working…"):
                 try:
-                    result = run_full_pipeline(
+                    result = _orchestrator().run_full_pipeline(
                         region=region,
                         city=city,
                         niche=niche,
@@ -528,7 +556,7 @@ See **Sheets** page.
 
 def page_sheets():
     st.markdown("### ☁️ Sheets")
-    sh = sheets_status()
+    sh = _sheets().sheets_status()
     st.write("Connected:" , "✅" if sh["enabled"] else "❌")
     st.markdown(
         """
@@ -548,11 +576,11 @@ GOOGLE_SERVICE_ACCOUNT_JSON = \"\"\"{...}\"\"\"
     )
     if st.button("Push all leads to Sheets", type="primary", use_container_width=True):
         try:
-            st.success(push_leads_to_sheets(load_leads()))
+            st.success(_sheets().push_leads_to_sheets(_storage().load_leads()))
         except Exception as e:
             st.error(str(e))
     if st.button("Download Excel", use_container_width=True):
-        path = export_leads_excel()
+        path = _storage().export_leads_excel()
         with open(path, "rb") as f:
             st.download_button("Save leads.xlsx", f, "leads.xlsx", use_container_width=True)
 
@@ -562,17 +590,19 @@ def page_guide():
     st.write(
         "Highest score = independent shop + **product ads** (IG/FB/Google) + weak/no website."
     )
-    st.dataframe(pd.DataFrame(SCORE_FACTOR_GUIDE), use_container_width=True, hide_index=True)
+    import pandas as pd
+    st.dataframe(pd.DataFrame(_scoring().SCORE_FACTOR_GUIDE), use_container_width=True, hide_index=True)
     st.markdown("#### Recent activity")
-    acts = recent_activity(12)
+    acts = _storage().recent_activity(12)
     if acts:
+        import pandas as pd
         st.dataframe(pd.DataFrame(acts), use_container_width=True, hide_index=True)
 
 
 def page_settings():
     st.markdown("### ⚙️ Settings")
     s = get_settings()
-    h = health_check()
+    h = _scraper().health_check()
     st.json(
         {
             "scraper_mode": s["scraper_mode"],
@@ -580,7 +610,7 @@ def page_settings():
             "llm_key_present": bool(s["llm_api_key"]),
             "ready": h["ready"],
             "agency_name": s["agency_name"],
-            "sheets": sheets_status(),
+            "sheets": _sheets().sheets_status(),
         }
     )
     if st.button("Log out", use_container_width=True):

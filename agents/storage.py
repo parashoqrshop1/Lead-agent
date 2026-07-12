@@ -460,5 +460,10 @@ def export_leads_excel(path: Optional[Path] = None) -> Path:
     df = leads_dataframe()
     if df.empty:
         df = pd.DataFrame(columns=["business_name", "niche", "phone", "city", "status"])
-    df.to_excel(path, index=False)
+    try:
+        df.to_excel(path, index=False)
+    except Exception:
+        # fallback CSV if openpyxl/native issue
+        path = path.with_suffix(".csv")
+        df.to_csv(path, index=False)
     return path
