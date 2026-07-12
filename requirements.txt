@@ -1,21 +1,10 @@
-# ULTRA-LIGHT for Streamlit Community Cloud (often stuck on Python 3.14)
-# Demo + local dashboard work with these only.
-# Real Gemini scrape / Sheets: install optional extras later.
-
-streamlit>=1.40.0
-pandas>=2.2.0
-numpy>=1.26.0
-python-dotenv>=1.0.0
-httpx>=0.27.0
-openpyxl>=3.1.0
-pyyaml>=6.0.1
-tenacity>=8.2.0
-beautifulsoup4>=4.12.0
-
-# NOTE: google-generativeai / gspread intentionally NOT listed here.
-# They pull grpc/pydantic native stacks that can segfault on Cloud Python 3.14.
-# Demo mode does not need them.
-# When Cloud lets you pick Python 3.12, add:
-#   google-generativeai
-#   gspread
-#   google-auth
+# Streamlit Cloud — pin OLDER stable wheels (1.59 + pandas 3 has been segfaulting)
+streamlit==1.40.2
+pandas==2.2.3
+numpy==1.26.4
+python-dotenv==1.0.1
+httpx==0.27.2
+openpyxl==3.1.5
+pyyaml==6.0.2
+tenacity==8.5.0
+beautifulsoup4==4.12.3
