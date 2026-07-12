@@ -13,13 +13,6 @@ if str(ROOT) not in sys.path:
 
 import streamlit as st
 
-st.set_page_config(
-    page_title="Lead Agent",
-    page_icon="🏪",
-    layout="centered",
-    initial_sidebar_state="collapsed",
-)
-
 
 def _safe_import_error(title: str, err: Exception) -> None:
     st.error(f"{title}: {err}")
