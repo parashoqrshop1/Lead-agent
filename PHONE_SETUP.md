@@ -14,11 +14,9 @@ Repo: https://github.com/parashoqrshop1/Lead-agent
 4. Main file: `dashboard/app.py`
 5. Secrets → paste:
 
-### Live free scraping
+### First deploy on Streamlit Cloud (recommended)
 ```toml
-SCRAPER_MODE = "open_source"
-GEMINI_API_KEY = "YOUR_FREE_GEMINI_KEY"
-LLM_MODEL = "google_genai/gemini-2.0-flash"
+SCRAPER_MODE = "demo"
 DASHBOARD_PASSWORD = "strong-password"
 AGENCY_NAME = "Your Web Agency"
 AGENCY_TAGLINE = "Digital experiences for independent shops"
@@ -27,11 +25,14 @@ AGENCY_EMAIL = "hello@your-agency.com"
 AGENCY_WHATSAPP = "+91XXXXXXXXXX"
 ```
 
-### Zero-key demo first (explore UI)
+Streamlit free tier installs a **light** `requirements.txt` (dashboard + Sheets + demo agents).
+Heavy ScrapeGraphAI/Playwright is in `requirements-scraper.txt` for PC/VPS later.
+
+### Later: live scrape on a stronger host
 ```toml
-SCRAPER_MODE = "demo"
-DASHBOARD_PASSWORD = "demo"
-AGENCY_NAME = "Your Web Agency"
+SCRAPER_MODE = "open_source"
+GEMINI_API_KEY = "YOUR_FREE_GEMINI_KEY"
+LLM_MODEL = "google_genai/gemini-2.0-flash"
 ```
 
 6. Deploy → open the `.streamlit.app` link → login

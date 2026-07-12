@@ -6,7 +6,11 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
-from dotenv import load_dotenv
+try:
+    from dotenv import load_dotenv
+except ImportError:  # pragma: no cover
+    def load_dotenv(*_a, **_k):
+        return False
 
 ROOT = Path(__file__).resolve().parent.parent
 DATA_DIR = ROOT / "data"
