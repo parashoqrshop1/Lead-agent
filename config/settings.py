@@ -2,15 +2,16 @@
 from __future__ import annotations
 
 import os
-from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
 try:
     from dotenv import load_dotenv
 except ImportError:  # pragma: no cover
+
     def load_dotenv(*_a, **_k):
         return False
+
 
 ROOT = Path(__file__).resolve().parent.parent
 DATA_DIR = ROOT / "data"
@@ -25,26 +26,38 @@ load_dotenv(ROOT / ".env")
 
 
 def _secret(key: str, default: str = "") -> str:
+    """Read Streamlit secret or env. Never crash if secrets missing."""
     try:
         import streamlit as st
 
-        if hasattr(st, "secrets") and key in st.secrets:
-            val = st.secrets[key]
-            # service account may be nested dict in secrets.toml
-            if isinstance(val, dict):
-                import json
+        if hasattr(st, "secrets"):
+            val = None
+            try:
+                val = st.secrets.get(key, None)
+            except Exception:
+                try:
+                    val = st.secrets[key]
+                except Exception:
+                    val = None
+            if val is not None:
+                if isinstance(val, dict):
+                    import json
 
-                return json.dumps(val)
-            return str(val)
+                    return json.dumps(val)
+                text = str(val)
+                return text.strip() if key == "DASHBOARD_PASSWORD" else text
     except Exception:
         pass
-    return os.getenv(key, default)
+    env = os.getenv(key)
+    if env is None or env == "":
+        return default
+    return env.strip() if key == "DASHBOARD_PASSWORD" else env
 
 
-@lru_cache(maxsize=1)
 def get_settings() -> dict[str, Any]:
+    """Fresh each call — important after secrets changes on Streamlit Cloud."""
     model = _secret("LLM_MODEL", "google_genai/gemini-2.0-flash")
-    scraper_mode = _secret("SCRAPER_MODE", "open_source").lower()
+    scraper_mode = _secret("SCRAPER_MODE", "demo").lower()
 
     api_key = ""
     if model.startswith("google_genai") or "gemini" in model:
@@ -60,22 +73,21 @@ def get_settings() -> dict[str, Any]:
             or _secret("OPENAI_API_KEY")
         )
 
-    # Google Sheets (free) — service account JSON as string
     sa_json = _secret("GOOGLE_SERVICE_ACCOUNT_JSON")
     if not sa_json:
-        # optional file path
         sa_path = _secret("GOOGLE_SERVICE_ACCOUNT_FILE")
         if sa_path and Path(sa_path).exists():
             sa_json = Path(sa_path).read_text(encoding="utf-8")
 
     auto_sheets = _secret("SHEETS_AUTO_SYNC", "true").lower() in ("1", "true", "yes")
+    pwd = _secret("DASHBOARD_PASSWORD", "change-me-now") or "change-me-now"
 
     return {
         "llm_model": model,
         "llm_api_key": api_key,
         "scraper_mode": scraper_mode,
         "scrapegraph_api_key": _secret("SCRAPEGRAPH_API_KEY"),
-        "dashboard_password": _secret("DASHBOARD_PASSWORD", "change-me-now") or "change-me-now",
+        "dashboard_password": pwd,
         "agency_name": _secret("AGENCY_NAME", "Your Web Agency"),
         "agency_website": _secret("AGENCY_WEBSITE", "https://your-agency.com"),
         "agency_email": _secret("AGENCY_EMAIL", "hello@your-agency.com"),
