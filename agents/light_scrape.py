@@ -175,14 +175,9 @@ def light_search_leads(
         except Exception as e:
             errors.append(f"{q}: {e}")
 
-    # de-dupe
-    seen = set()
-    unique: List[ShopLead] = []
-    for l in filter_icp(qualify_batch(all_leads), drop_chains=False):
-        k = (l.business_name or "").strip().lower()
-        if k and k not in seen:
-            seen.add(k)
-            unique.append(l)
+    from agents.storage import dedupe_leads_list
+
+    unique = dedupe_leads_list(filter_icp(qualify_batch(all_leads), drop_chains=False))
     unique = unique[: max(limit, 1)]
     if save and unique:
         upsert_leads(unique)
@@ -209,14 +204,9 @@ def bulk_demo_leads(
             batch = demo_leads(city, country, niche, limit=per_combo)
             # drop chain traps from volume runs if desired later; keep for now
             all_leads.extend(batch)
-    # de-dupe by name
-    seen = set()
-    unique = []
-    for l in qualify_batch(all_leads):
-        k = (l.business_name or "").lower()
-        if k and k not in seen:
-            seen.add(k)
-            unique.append(l)
+    from agents.storage import dedupe_leads_list
+
+    unique = dedupe_leads_list(qualify_batch(all_leads))
     if save and unique:
         upsert_leads(unique)
     return unique

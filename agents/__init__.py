@@ -22,12 +22,14 @@ from agents.sheets_store import (
 )
 from agents.storage import (
     add_task,
+    dedupe_leads_list,
     delete_lead,
     export_leads_excel,
     leads_dataframe,
     load_leads,
     load_proposals,
     load_tasks,
+    purge_duplicate_leads,
     recent_activity,
     update_lead,
     upsert_leads,
@@ -54,6 +56,8 @@ __all__ = [
     "suggest_cities",
     "load_leads",
     "upsert_leads",
+    "dedupe_leads_list",
+    "purge_duplicate_leads",
     "update_lead",
     "delete_lead",
     "leads_dataframe",

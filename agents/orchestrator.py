@@ -221,20 +221,17 @@ def run_bulk_pipeline(
                     except Exception as e:
                         errors.append(f"{city}/{niche}: {e}")
 
+        from agents.storage import dedupe_leads_list
+
         all_leads = filter_icp(qualify_batch(all_leads), drop_chains=drop_chains)
-        # de-dupe
-        seen = set()
-        unique: List[ShopLead] = []
-        for l in all_leads:
-            k = (l.business_name or "").strip().lower()
-            if k and k not in seen:
-                seen.add(k)
-                unique.append(l)
+        unique = dedupe_leads_list(all_leads)
 
         if analyze_ads and unique:
             unique = enrich_ads_batch(unique, use_llm=False, save=False)
+            unique = dedupe_leads_list(unique)
 
         if unique:
+            # upsert merges against existing saved leads too (no repeats)
             upsert_leads(unique)
 
         sheets_result = None

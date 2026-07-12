@@ -26,6 +26,7 @@ from agents.storage import (
     export_leads_excel,
     leads_dataframe,
     load_leads,
+    purge_duplicate_leads,
     recent_activity,
     update_lead,
     upsert_leads,
@@ -295,6 +296,14 @@ def page_leads():
             delete_lead(lead.id)
             st.session_state.pop("selected_lead_id", None)
             st.rerun()
+
+    if st.button("🧹 Remove duplicate leads", use_container_width=True):
+        result = purge_duplicate_leads()
+        st.success(
+            f"Cleaned: {result['before']} → {result['after']} "
+            f"(removed {result['removed']} duplicates)"
+        )
+        st.rerun()
 
     st.download_button(
         "⬇️ Download CSV",

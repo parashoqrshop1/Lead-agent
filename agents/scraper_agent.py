@@ -573,14 +573,9 @@ def run_campaign(
         niches=None,
     )
 
-    # de-dupe
-    seen = set()
-    unique: List[ShopLead] = []
-    for l in qualified:
-        k = (l.business_name or "").lower()
-        if k and k not in seen:
-            seen.add(k)
-            unique.append(l)
+    from agents.storage import dedupe_leads_list
+
+    unique = dedupe_leads_list(qualified)
 
     if unique:
         upsert_leads(unique)
