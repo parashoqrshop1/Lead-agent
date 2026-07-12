@@ -209,7 +209,7 @@ def analyze_ads_with_llm(lead: ShopLead) -> ShopLead:
         if raw is None:
             # pure LLM JSON
             try:
-                import google.generativeai as genai
+                raise ImportError("use heuristic")  # google.generativeai
 
                 genai.configure(api_key=s["llm_api_key"])
                 model_name = s["llm_model"].split("/")[-1]

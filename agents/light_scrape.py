@@ -70,26 +70,54 @@ def fetch_url_text(url: str, timeout: float = 25.0) -> str:
 
 
 def _gemini_json(prompt: str) -> Any:
+    """
+    Call free Gemini via REST (httpx only — no google-generativeai SDK).
+    This avoids grpc/pydantic native crashes on Streamlit Cloud Python 3.14.
+    """
     s = get_settings()
-    key = s.get("llm_api_key") or ""
+    key = (s.get("llm_api_key") or "").strip()
     if not key:
         raise RuntimeError(
-            "GEMINI_API_KEY missing. Add free key from https://aistudio.google.com/apikey"
+            "GEMINI_API_KEY missing. Get free key: https://aistudio.google.com/apikey "
+            "then put it in Streamlit Secrets."
         )
-    try:
-        import google.generativeai as genai
-    except ImportError as e:
-        raise RuntimeError(
-            "google-generativeai is not installed on this host. "
-            "Demo mode works without it. For real scrape, use Python 3.12 Cloud "
-            "and add google-generativeai to requirements."
-        ) from e
 
-    genai.configure(api_key=key)
-    model_name = (s.get("llm_model") or "gemini-2.0-flash").split("/")[-1]
-    model = genai.GenerativeModel(model_name)
-    resp = model.generate_content(prompt)
-    text = (getattr(resp, "text", None) or "").strip()
+    model = (s.get("llm_model") or "gemini-2.0-flash").split("/")[-1]
+    # common free model ids
+    if model in ("google_genai", ""):
+        model = "gemini-2.0-flash"
+    url = (
+        f"https://generativelanguage.googleapis.com/v1beta/models/"
+        f"{model}:generateContent?key={key}"
+    )
+    payload = {
+        "contents": [{"role": "user", "parts": [{"text": prompt}]}],
+        "generationConfig": {
+            "temperature": 0.2,
+            "responseMimeType": "application/json",
+        },
+    }
+    with httpx.Client(timeout=60.0) as client:
+        r = client.post(url, json=payload)
+        if r.status_code >= 400:
+            # try fallback model names if 404
+            if r.status_code == 404 and model != "gemini-1.5-flash":
+                model = "gemini-1.5-flash"
+                url = (
+                    f"https://generativelanguage.googleapis.com/v1beta/models/"
+                    f"{model}:generateContent?key={key}"
+                )
+                r = client.post(url, json=payload)
+            if r.status_code >= 400:
+                raise RuntimeError(f"Gemini API error {r.status_code}: {r.text[:400]}")
+        data = r.json()
+
+    text = ""
+    try:
+        text = data["candidates"][0]["content"]["parts"][0]["text"]
+    except Exception:
+        text = json.dumps(data)
+    text = (text or "").strip()
     if text.startswith("```"):
         text = text.strip("`")
         if text.startswith("json"):

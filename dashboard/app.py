@@ -368,28 +368,41 @@ def page_find(orchestrator, scraper):
     with tab_real:
         st.markdown(
             """
-### Make leads REAL
+### Make leads REAL (exact)
 
-1. Streamlit app settings → set **Python 3.12** if available (Cloud ignores runtime.txt)
-2. Add to Secrets:
+1. Get free Gemini key: https://aistudio.google.com/apikey  
+2. Streamlit app → **⋮ → Settings → Secrets** → paste:
 
 ```toml
 SCRAPER_MODE = "light"
-GEMINI_API_KEY = "your_free_key_from_aistudio.google.com"
+GEMINI_API_KEY = "PASTE_YOUR_KEY"
+LLM_MODEL = "gemini-2.0-flash"
 DASHBOARD_PASSWORD = "your-password"
+AGENCY_NAME = "Your Web Agency"
+AGENCY_WHATSAPP = "+91XXXXXXXXXX"
 ```
 
-3. Also add to `requirements.txt` on a stable Python 3.12 deploy:
-   - `google-generativeai`
-   - `gspread` / `google-auth` (optional Sheets)
+3. **Save** → **Manage app → Reboot**
+4. Login → **Find leads → Local niches**
+5. City: your town (e.g. Akbarpur) · niches: café/jeweller/clothing/shoes
+6. Run **Hunt local niche leads**
 
-4. Reboot → **Local niches** again
+This uses **real public web search + free Gemini REST API** (no fake demo data).
 
-### Contact fields collected
-Phone, WhatsApp, email, Instagram, Facebook, website, address, ads info, score factors —
-when publicly available.
+### What you get (when public)
+Phone / WhatsApp, Instagram, Facebook, website, address, ads style/topics, score.
+
+### Tip
+If Cloud is unstable, still set Python **3.12** in Advanced settings when available.
 """
         )
+        # live readiness for real mode
+        if h.get("scraper_mode") in ("light", "gemini_web", "open_source") and h.get("llm_key_present"):
+            st.success("Real mode secrets look ready. Run Local niches now.")
+        elif h.get("llm_key_present"):
+            st.warning('Gemini key found. Set SCRAPER_MODE = "light" then Reboot.')
+        else:
+            st.error("No GEMINI_API_KEY in Secrets yet — still demo/fake leads.")
 
 
 def page_guide(scoring, storage):

@@ -56,23 +56,15 @@ def _secret(key: str, default: str = "") -> str:
 
 def get_settings() -> dict[str, Any]:
     """Fresh each call — important after secrets changes on Streamlit Cloud."""
-    model = _secret("LLM_MODEL", "google_genai/gemini-2.0-flash")
-    # demo | light (recommended on Streamlit) | open_source | cloud_api
-    scraper_mode = _secret("SCRAPER_MODE", "demo").lower()
+    model = _secret("LLM_MODEL", "gemini-2.0-flash")
+    # Prefer real mode when Gemini key exists; otherwise demo.
+    default_mode = "light" if _secret("GEMINI_API_KEY") else "demo"
+    scraper_mode = (_secret("SCRAPER_MODE", default_mode) or default_mode).lower()
 
-    api_key = ""
-    if model.startswith("google_genai") or "gemini" in model:
-        api_key = _secret("GEMINI_API_KEY")
-    elif model.startswith("groq"):
-        api_key = _secret("GROQ_API_KEY")
-    elif model.startswith("openai") or model.startswith("ollama"):
-        api_key = _secret("OPENAI_API_KEY") or _secret("GROQ_API_KEY")
-    else:
-        api_key = (
-            _secret("GEMINI_API_KEY")
-            or _secret("GROQ_API_KEY")
-            or _secret("OPENAI_API_KEY")
-        )
+    api_key = _secret("GEMINI_API_KEY") or _secret("GROQ_API_KEY") or _secret("OPENAI_API_KEY")
+    # if model implies gemini, prefer gemini key only
+    if "gemini" in model or model.startswith("google_genai"):
+        api_key = _secret("GEMINI_API_KEY") or api_key
 
     sa_json = _secret("GOOGLE_SERVICE_ACCOUNT_JSON")
     if not sa_json:
@@ -80,11 +72,11 @@ def get_settings() -> dict[str, Any]:
         if sa_path and Path(sa_path).exists():
             sa_json = Path(sa_path).read_text(encoding="utf-8")
 
-    auto_sheets = _secret("SHEETS_AUTO_SYNC", "true").lower() in ("1", "true", "yes")
+    auto_sheets = _secret("SHEETS_AUTO_SYNC", "false").lower() in ("1", "true", "yes")
     pwd = _secret("DASHBOARD_PASSWORD", "change-me-now") or "change-me-now"
 
     return {
-        "llm_model": model,
+        "llm_model": model.replace("google_genai/", ""),
         "llm_api_key": api_key,
         "scraper_mode": scraper_mode,
         "scrapegraph_api_key": _secret("SCRAPEGRAPH_API_KEY"),

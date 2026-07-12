@@ -155,7 +155,7 @@ def _llm_polish(
         s = get_settings()
         if not s.get("llm_api_key"):
             return None
-        import google.generativeai as genai
+        raise ImportError("skip llm polish")
 
         genai.configure(api_key=s["llm_api_key"])
         model_name = s["llm_model"].split("/")[-1]
