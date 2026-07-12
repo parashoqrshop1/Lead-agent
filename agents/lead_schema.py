@@ -1,11 +1,10 @@
-"""Pydantic models for independent-shop leads + multi-agent tasks."""
+"""Lead models without pydantic (Streamlit Cloud Python 3.14-safe)."""
 from __future__ import annotations
 
+from dataclasses import asdict, dataclass, field, fields
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 from uuid import uuid4
-
-from pydantic import BaseModel, Field, field_validator
 
 
 def utc_now() -> str:
@@ -38,7 +37,6 @@ def _is_missing(v: Any) -> bool:
 
 
 def clean_lead_dict(raw: Dict[str, Any]) -> Dict[str, Any]:
-    """Normalize pandas/numpy row dicts so Pydantic never sees NaN."""
     out: Dict[str, Any] = {}
     bool_fields = {
         "has_website",
@@ -71,7 +69,7 @@ def clean_lead_dict(raw: Dict[str, Any]) -> Dict[str, Any]:
                 out[k] = bool(v)
         elif k in int_fields:
             try:
-                out[k] = int(float(v))
+                out[k] = max(0, min(100, int(float(v))))
             except Exception:
                 out[k] = 0
         elif isinstance(v, str):
@@ -93,8 +91,37 @@ def clean_lead_dict(raw: Dict[str, Any]) -> Dict[str, Any]:
     return out
 
 
-class ShopLead(BaseModel):
-    id: str = Field(default_factory=lambda: str(uuid4())[:8])
+def _coerce_bool(v: Any, default: Optional[bool] = None) -> Optional[bool]:
+    if _is_missing(v):
+        return default
+    if isinstance(v, str):
+        s = v.strip().lower()
+        if s in ("true", "1", "yes", "y"):
+            return True
+        if s in ("false", "0", "no", "n"):
+            return False
+        return default
+    return bool(v)
+
+
+def _coerce_int(v: Any, default: int = 0) -> int:
+    if _is_missing(v):
+        return default
+    try:
+        return max(0, min(100, int(float(v))))
+    except Exception:
+        return default
+
+
+def _coerce_str(v: Any, default: Optional[str] = None) -> Optional[str]:
+    if _is_missing(v):
+        return default
+    return str(v)
+
+
+@dataclass
+class ShopLead:
+    id: str = field(default_factory=lambda: str(uuid4())[:8])
     business_name: str = ""
     niche: Optional[str] = None
     category: Optional[str] = None
@@ -123,7 +150,7 @@ class ShopLead(BaseModel):
     has_facebook_ads: Optional[bool] = None
     has_google_ads: Optional[bool] = None
     ads_evidence: Optional[str] = None
-    lead_score: int = Field(default=0, ge=0, le=100)
+    lead_score: int = 0
     score_breakdown: Optional[str] = None
     score_factors: Optional[str] = None
     pain_points: Optional[str] = None
@@ -133,85 +160,44 @@ class ShopLead(BaseModel):
     status: str = "new"
     notes: Optional[str] = None
     owner_name: Optional[str] = None
-    created_at: str = Field(default_factory=utc_now)
-    updated_at: str = Field(default_factory=utc_now)
+    created_at: str = field(default_factory=utc_now)
+    updated_at: str = field(default_factory=utc_now)
 
-    @field_validator("lead_score", mode="before")
-    @classmethod
-    def _score_int(cls, v: Any) -> int:
-        if _is_missing(v):
-            return 0
-        try:
-            return max(0, min(100, int(float(v))))
-        except Exception:
-            return 0
+    def model_dump(self) -> Dict[str, Any]:
+        return asdict(self)
 
-    @field_validator(
-        "has_website",
-        "is_independent",
-        "is_branded_chain",
-        "carries_multiple_brands",
-        "runs_ads",
-        "has_instagram_ads",
-        "has_facebook_ads",
-        "has_google_ads",
-        mode="before",
-    )
     @classmethod
-    def _opt_bool(cls, v: Any) -> Any:
-        if _is_missing(v):
-            return None
-        if isinstance(v, str):
-            s = v.strip().lower()
-            if s in ("true", "1", "yes", "y"):
-                return True
-            if s in ("false", "0", "no", "n"):
-                return False
-            return None
-        return bool(v)
-
-    @field_validator(
-        "business_name",
-        "niche",
-        "category",
-        "city",
-        "country",
-        "address",
-        "phone",
-        "email",
-        "website",
-        "instagram",
-        "facebook",
-        "whatsapp",
-        "google_maps_url",
-        "website_quality",
-        "product_variety",
-        "independence_signals",
-        "ad_platforms",
-        "ad_topics",
-        "ad_style",
-        "ads_evidence",
-        "score_breakdown",
-        "score_factors",
-        "pain_points",
-        "experience_fit",
-        "recommended_package",
-        "source_url",
-        "status",
-        "notes",
-        "owner_name",
-        "created_at",
-        "updated_at",
-        "id",
-        mode="before",
-    )
-    @classmethod
-    def _opt_str(cls, v: Any) -> Any:
-        if _is_missing(v):
-            return None
-        if not isinstance(v, str):
-            return str(v)
-        return v
+    def model_validate(cls, data: Any) -> "ShopLead":
+        if isinstance(data, cls):
+            return data
+        if not isinstance(data, dict):
+            data = {"business_name": str(data)}
+        data = clean_lead_dict(data)
+        known = {f.name for f in fields(cls)}
+        kwargs = {k: v for k, v in data.items() if k in known}
+        # coerce core fields
+        kwargs["business_name"] = _coerce_str(kwargs.get("business_name"), "Unknown") or "Unknown"
+        kwargs["status"] = _coerce_str(kwargs.get("status"), "new") or "new"
+        kwargs["id"] = _coerce_str(kwargs.get("id"), str(uuid4())[:8]) or str(uuid4())[:8]
+        kwargs["lead_score"] = _coerce_int(kwargs.get("lead_score"), 0)
+        for b in (
+            "has_website",
+            "is_independent",
+            "is_branded_chain",
+            "carries_multiple_brands",
+            "runs_ads",
+            "has_instagram_ads",
+            "has_facebook_ads",
+            "has_google_ads",
+        ):
+            if b in kwargs:
+                default = True if b == "is_independent" else False if b == "is_branded_chain" else None
+                kwargs[b] = _coerce_bool(kwargs.get(b), default)
+        if not kwargs.get("created_at"):
+            kwargs["created_at"] = utc_now()
+        if not kwargs.get("updated_at"):
+            kwargs["updated_at"] = utc_now()
+        return cls(**kwargs)
 
     @classmethod
     def from_any(cls, raw: Any) -> "ShopLead":
@@ -219,31 +205,10 @@ class ShopLead(BaseModel):
             return raw
         if hasattr(raw, "to_dict"):
             raw = raw.to_dict()
-        if not isinstance(raw, dict):
-            raw = {"business_name": str(raw)}
-        data = clean_lead_dict(raw)
-        if data.get("business_name") is None:
-            data["business_name"] = "Unknown"
-        if data.get("status") is None:
-            data["status"] = "new"
-        if data.get("id") is None:
-            data["id"] = str(uuid4())[:8]
-        if data.get("created_at") is None:
-            data["created_at"] = utc_now()
-        if data.get("updated_at") is None:
-            data["updated_at"] = utc_now()
         try:
-            return cls.model_validate(data)
+            return cls.model_validate(raw if isinstance(raw, dict) else {"business_name": str(raw)})
         except Exception:
-            return cls(
-                id=str(data.get("id") or str(uuid4())[:8]),
-                business_name=str(data.get("business_name") or "Unknown"),
-                city=data.get("city"),
-                niche=data.get("niche"),
-                status=str(data.get("status") or "new"),
-                lead_score=int(data.get("lead_score") or 0),
-                notes=str(data.get("notes") or "") or None,
-            )
+            return cls(business_name=str(getattr(raw, "business_name", raw) or "Unknown"))
 
     def recompute_score(self) -> int:
         from agents.scoring import apply_score
@@ -252,31 +217,69 @@ class ShopLead(BaseModel):
         return self.lead_score
 
 
-class ExperienceProposal(BaseModel):
-    id: str = Field(default_factory=lambda: str(uuid4())[:8])
+@dataclass
+class ExperienceProposal:
     lead_id: str
+    id: str = field(default_factory=lambda: str(uuid4())[:8])
     business_name: str = ""
     niche: Optional[str] = None
     package_name: str = ""
     headline: str = ""
     summary: str = ""
-    pillars: List[str] = Field(default_factory=list)
+    pillars: List[str] = field(default_factory=list)
     outreach_whatsapp: str = ""
     outreach_email: str = ""
-    created_at: str = Field(default_factory=utc_now)
+    created_at: str = field(default_factory=utc_now)
+
+    def model_dump(self) -> Dict[str, Any]:
+        return asdict(self)
+
+    @classmethod
+    def model_validate(cls, data: Any) -> "ExperienceProposal":
+        if isinstance(data, cls):
+            return data
+        if not isinstance(data, dict):
+            data = {}
+        known = {f.name for f in fields(cls)}
+        kwargs = {k: v for k, v in data.items() if k in known and not _is_missing(v)}
+        if "lead_id" not in kwargs:
+            kwargs["lead_id"] = str(data.get("lead_id") or "")
+        if "pillars" in kwargs and not isinstance(kwargs["pillars"], list):
+            kwargs["pillars"] = []
+        return cls(**kwargs)
 
 
-class AgentTask(BaseModel):
-    id: str = Field(default_factory=lambda: str(uuid4())[:8])
+@dataclass
+class AgentTask:
     task_type: str
     title: str
+    id: str = field(default_factory=lambda: str(uuid4())[:8])
     status: str = "pending"
-    params: dict = Field(default_factory=dict)
+    params: dict = field(default_factory=dict)
     result_summary: Optional[str] = None
     error: Optional[str] = None
-    created_at: str = Field(default_factory=utc_now)
-    updated_at: str = Field(default_factory=utc_now)
-    lead_ids: List[str] = Field(default_factory=list)
+    created_at: str = field(default_factory=utc_now)
+    updated_at: str = field(default_factory=utc_now)
+    lead_ids: List[str] = field(default_factory=list)
+
+    def model_dump(self) -> Dict[str, Any]:
+        return asdict(self)
+
+    @classmethod
+    def model_validate(cls, data: Any) -> "AgentTask":
+        if isinstance(data, cls):
+            return data
+        if not isinstance(data, dict):
+            data = {}
+        known = {f.name for f in fields(cls)}
+        kwargs = {k: v for k, v in data.items() if k in known and not _is_missing(v)}
+        kwargs.setdefault("task_type", str(data.get("task_type") or "custom"))
+        kwargs.setdefault("title", str(data.get("title") or "Untitled"))
+        if "params" in kwargs and not isinstance(kwargs["params"], dict):
+            kwargs["params"] = {}
+        if "lead_ids" in kwargs and not isinstance(kwargs["lead_ids"], list):
+            kwargs["lead_ids"] = []
+        return cls(**kwargs)
 
 
 EXTRACT_INDEPENDENT_SHOPS_PROMPT = """

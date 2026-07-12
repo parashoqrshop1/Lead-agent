@@ -12,3 +12,4 @@
 {"ts": "2026-07-12 11:59:46 UTC", "event": "upsert_leads", "details": {"added": 25, "updated": 0, "collapsed": 0, "total": 25}}
 {"ts": "2026-07-12 11:59:46 UTC", "event": "add_task", "details": {"id": "e3a714d9", "type": "hyperlocal"}}
 {"ts": "2026-07-12 11:59:46 UTC", "event": "upsert_leads", "details": {"added": 0, "updated": 13, "collapsed": 0, "total": 25}}
+{"ts": "2026-07-12 12:35:58 UTC", "event": "upsert_leads", "details": {"added": 1, "updated": 0, "collapsed": 0, "total": 1}}
