@@ -1,0 +1,2 @@
+{"ts": "2026-07-12 11:35:39 UTC", "event": "add_task", "details": {"id": "da6e3008", "type": "bulk_campaign"}}
+{"ts": "2026-07-12 11:35:39 UTC", "event": "upsert_leads", "details": {"added": 60, "updated": 0}}

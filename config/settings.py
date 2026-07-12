@@ -57,6 +57,7 @@ def _secret(key: str, default: str = "") -> str:
 def get_settings() -> dict[str, Any]:
     """Fresh each call — important after secrets changes on Streamlit Cloud."""
     model = _secret("LLM_MODEL", "google_genai/gemini-2.0-flash")
+    # demo | light (recommended on Streamlit) | open_source | cloud_api
     scraper_mode = _secret("SCRAPER_MODE", "demo").lower()
 
     api_key = ""

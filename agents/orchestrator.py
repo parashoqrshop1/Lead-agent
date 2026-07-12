@@ -153,3 +153,119 @@ def run_discover_only(city: str, country: str, niche: str, limit: int = 10) -> L
     except Exception as e:
         update_task(task.id, status="failed", error=str(e))
         raise
+
+
+def run_bulk_pipeline(
+    *,
+    region: str,
+    cities: List[str],
+    niches: List[str],
+    limit_per: int = 20,
+    analyze_ads: bool = True,
+    drop_chains: bool = True,
+    sync_sheets: bool = True,
+) -> Dict[str, Any]:
+    """Run many city×niche campaigns and merge leads for higher volume."""
+    from config.niches import REGIONS
+
+    task = add_task(
+        AgentTask(
+            task_type="bulk_campaign",
+            title=f"Bulk: {len(cities)} cities × {len(niches)} niches",
+            status="running",
+            params={
+                "region": region,
+                "cities": cities,
+                "niches": niches,
+                "limit_per": limit_per,
+            },
+        )
+    )
+    all_leads: List[ShopLead] = []
+    errors: List[str] = []
+    country = REGIONS.get(region, {}).get("country", "India")
+
+    try:
+        s_mode = None
+        try:
+            from config.settings import get_settings
+
+            s_mode = get_settings().get("scraper_mode")
+        except Exception:
+            s_mode = "demo"
+
+        if s_mode == "demo":
+            from agents.light_scrape import bulk_demo_leads
+
+            all_leads = bulk_demo_leads(
+                cities=cities,
+                niches=niches,
+                country=country or "India",
+                per_combo=limit_per,
+                save=False,
+            )
+        else:
+            for city in cities:
+                for niche in niches:
+                    try:
+                        result = run_campaign(
+                            region=region,
+                            city=city,
+                            niche=niche,
+                            limit=limit_per,
+                            also_search=True,
+                            drop_chains=drop_chains,
+                        )
+                        all_leads.extend(result.get("leads") or [])
+                        errors.extend(result.get("errors") or [])
+                    except Exception as e:
+                        errors.append(f"{city}/{niche}: {e}")
+
+        all_leads = filter_icp(qualify_batch(all_leads), drop_chains=drop_chains)
+        # de-dupe
+        seen = set()
+        unique: List[ShopLead] = []
+        for l in all_leads:
+            k = (l.business_name or "").strip().lower()
+            if k and k not in seen:
+                seen.add(k)
+                unique.append(l)
+
+        if analyze_ads and unique:
+            unique = enrich_ads_batch(unique, use_llm=False, save=False)
+
+        if unique:
+            upsert_leads(unique)
+
+        sheets_result = None
+        if sync_sheets:
+            try:
+                from agents.sheets_store import sheets_enabled, push_leads_to_sheets
+                from agents.storage import load_leads
+
+                if sheets_enabled():
+                    sheets_result = push_leads_to_sheets(load_leads())
+            except Exception as e:
+                sheets_result = {"ok": False, "error": str(e)}
+
+        summary = (
+            f"Bulk done: {len(unique)} unique leads from "
+            f"{len(cities)} cities × {len(niches)} niches"
+        )
+        update_task(
+            task.id,
+            status="done",
+            result_summary=summary,
+            lead_ids=[l.id for l in unique[:200]],
+        )
+        return {
+            "task_id": task.id,
+            "leads": unique,
+            "count": len(unique),
+            "errors": errors,
+            "sheets": sheets_result,
+            "summary": summary,
+        }
+    except Exception as e:
+        update_task(task.id, status="failed", error=str(e))
+        raise
