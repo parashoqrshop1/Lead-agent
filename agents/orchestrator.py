@@ -155,6 +155,132 @@ def run_discover_only(city: str, country: str, niche: str, limit: int = 10) -> L
         raise
 
 
+def run_hyperlocal_pipeline(
+    *,
+    region: str,
+    city: str,
+    niches: List[str],
+    limit: int = 40,
+    deep_local: bool = True,
+    max_localities: int = 8,
+    analyze_ads: bool = True,
+    drop_chains: bool = True,
+    sync_sheets: bool = True,
+) -> Dict[str, Any]:
+    """
+    Dedicated niche hunt inside ONE city/town across market localities.
+    Finds social-media shops (ads or organic product posts) for more local leads.
+    """
+    from config.niches import REGIONS
+    from config.settings import get_settings
+
+    task = add_task(
+        AgentTask(
+            task_type="hyperlocal",
+            title=f"Hyperlocal niches @ {city}",
+            status="running",
+            params={
+                "city": city,
+                "niches": niches,
+                "limit": limit,
+                "deep_local": deep_local,
+                "max_localities": max_localities,
+            },
+        )
+    )
+    country = REGIONS.get(region, {}).get("country", "India")
+    mode = get_settings().get("scraper_mode", "demo")
+    all_leads: List[ShopLead] = []
+    errors: List[str] = []
+
+    try:
+        if mode == "demo":
+            from agents.light_scrape import hyperlocal_demo_leads
+
+            # per_niche is treated as volume target per niche; overall unique often higher
+            all_leads = hyperlocal_demo_leads(
+                city=city,
+                niches=niches,
+                country=country or "India",
+                per_niche=max(limit, 30),
+                save=False,
+            )
+        else:
+            from agents.light_scrape import light_search_leads
+
+            per = max(10, limit // max(1, len(niches)))
+            for niche in niches:
+                try:
+                    found = light_search_leads(
+                        city=city,
+                        country=country or region,
+                        niche=niche,
+                        limit=per,
+                        save=False,
+                        deep_local=deep_local,
+                        max_localities=max_localities,
+                        queries_per_place=3,
+                    )
+                    all_leads.extend(found)
+                except Exception as e:
+                    errors.append(f"{niche}: {e}")
+
+        from agents.storage import dedupe_leads_list
+
+        unique = dedupe_leads_list(filter_icp(qualify_batch(all_leads), drop_chains=drop_chains))
+        if analyze_ads and unique:
+            unique = enrich_ads_batch(unique, use_llm=False, save=False)
+            unique = dedupe_leads_list(unique)
+
+        # Prefer social + product showcase
+        unique.sort(
+            key=lambda l: (
+                1 if (l.instagram or l.facebook) else 0,
+                1 if (l.ad_style or "").startswith("product") or l.runs_ads else 0,
+                l.lead_score or 0,
+            ),
+            reverse=True,
+        )
+
+        if unique:
+            upsert_leads(unique)
+
+        sheets_result = None
+        if sync_sheets:
+            try:
+                from agents.sheets_store import sheets_enabled, push_leads_to_sheets
+                from agents.storage import load_leads
+
+                if sheets_enabled():
+                    sheets_result = push_leads_to_sheets(load_leads())
+            except Exception as e:
+                sheets_result = {"ok": False, "error": str(e)}
+
+        social_n = sum(1 for l in unique if l.instagram or l.facebook)
+        summary = (
+            f"Hyperlocal {city}: {len(unique)} unique niche leads "
+            f"({social_n} with social) · niches={','.join(niches)}"
+        )
+        update_task(
+            task.id,
+            status="done",
+            result_summary=summary,
+            lead_ids=[l.id for l in unique[:200]],
+        )
+        return {
+            "task_id": task.id,
+            "leads": unique,
+            "count": len(unique),
+            "social_count": social_n,
+            "errors": errors,
+            "sheets": sheets_result,
+            "summary": summary,
+        }
+    except Exception as e:
+        update_task(task.id, status="failed", error=str(e))
+        raise
+
+
 def run_bulk_pipeline(
     *,
     region: str,

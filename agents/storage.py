@@ -141,9 +141,14 @@ def _dedupe_keys(lead: ShopLead) -> List[str]:
 
     if phone and len(phone) >= 8:
         keys.append(f"phone:{phone}")
-    if website and website not in ("", "example-outdated-shop.blogspot.com"):
+    if website and website not in ("", "example-outdated-shop.blogspot.com") and "example-outdated-shop" not in website:
         keys.append(f"web:{website}")
-    if instagram and instagram not in ("", "example_independent", "instagram.com/example_independent"):
+    # skip placeholder demo social handles
+    if (
+        instagram
+        and "example_independent" not in instagram
+        and instagram not in ("", "instagram.com")
+    ):
         keys.append(f"ig:{instagram}")
 
     # Strong identity: core name + city

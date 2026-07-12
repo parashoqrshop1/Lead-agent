@@ -1,5 +1,155 @@
 [
   {
+    "id": "e3a714d9",
+    "task_type": "hyperlocal",
+    "title": "Hyperlocal niches @ Akbarpur",
+    "status": "done",
+    "params": {
+      "city": "Akbarpur",
+      "niches": [
+        "jeweller",
+        "clothing"
+      ],
+      "limit": 40,
+      "deep_local": true,
+      "max_localities": 8
+    },
+    "result_summary": "Hyperlocal Akbarpur: 13 unique niche leads (13 with social) · niches=jeweller,clothing",
+    "error": null,
+    "created_at": "2026-07-12 11:59:46 UTC",
+    "updated_at": "2026-07-12 11:59:46 UTC",
+    "lead_ids": [
+      "86ffb0bc",
+      "f2e6c493",
+      "a74ebd4d",
+      "2abee0c9",
+      "bcad1902",
+      "c4d5d023",
+      "7d182374",
+      "c5813576",
+      "4a1ba591",
+      "f7a60334",
+      "76b89c53",
+      "aaea1a18",
+      "dc73cb18"
+    ]
+  },
+  {
+    "id": "ee9d1fc7",
+    "task_type": "hyperlocal",
+    "title": "Hyperlocal niches @ Akbarpur",
+    "status": "done",
+    "params": {
+      "city": "Akbarpur",
+      "niches": [
+        "jeweller",
+        "clothing",
+        "cafe",
+        "shoes"
+      ],
+      "limit": 50,
+      "deep_local": true,
+      "max_localities": 8
+    },
+    "result_summary": "Hyperlocal Akbarpur: 25 unique niche leads (25 with social) · niches=jeweller,clothing,cafe,shoes",
+    "error": null,
+    "created_at": "2026-07-12 11:59:45 UTC",
+    "updated_at": "2026-07-12 11:59:46 UTC",
+    "lead_ids": [
+      "88f718bd",
+      "a799e282",
+      "56ca49ce",
+      "2b2ad291",
+      "51d6c625",
+      "1fd55c3e",
+      "3e45a3f5",
+      "034fa80c",
+      "0903c0ff",
+      "45eda872",
+      "65394fc5",
+      "4d53b317",
+      "c9a6c249",
+      "c573d9ac",
+      "cea40465",
+      "2028712b",
+      "666b22d6",
+      "5b726ba3",
+      "b0803fe3",
+      "5715617e",
+      "a0f2794b",
+      "ea36925c",
+      "c7c6a8ab",
+      "651b2636",
+      "26c5674f"
+    ]
+  },
+  {
+    "id": "474208f0",
+    "task_type": "hyperlocal",
+    "title": "Hyperlocal niches @ Akbarpur",
+    "status": "done",
+    "params": {
+      "city": "Akbarpur",
+      "niches": [
+        "jeweller",
+        "clothing",
+        "cafe"
+      ],
+      "limit": 50,
+      "deep_local": true,
+      "max_localities": 8
+    },
+    "result_summary": "Hyperlocal Akbarpur: 19 unique niche leads (19 with social) · niches=jeweller,clothing,cafe",
+    "error": null,
+    "created_at": "2026-07-12 11:59:40 UTC",
+    "updated_at": "2026-07-12 11:59:40 UTC",
+    "lead_ids": [
+      "169601cf",
+      "a92f8783",
+      "c1a8e090",
+      "aa2c09c0",
+      "46d6dc66",
+      "8662455c",
+      "46ffe00a",
+      "c2b9fbce",
+      "72aa78ef",
+      "a40bffc6",
+      "6ac00931",
+      "6f8083f3",
+      "b328033e",
+      "39a7987d",
+      "e841c96d",
+      "bfa229a9",
+      "b853cfc7",
+      "11744d9a",
+      "b64d7413"
+    ]
+  },
+  {
+    "id": "531901bd",
+    "task_type": "hyperlocal",
+    "title": "Hyperlocal niches @ Akbarpur",
+    "status": "done",
+    "params": {
+      "city": "Akbarpur",
+      "niches": [
+        "jeweller",
+        "clothing",
+        "cafe"
+      ],
+      "limit": 40,
+      "deep_local": true,
+      "max_localities": 6
+    },
+    "result_summary": "Hyperlocal Akbarpur: 1 unique niche leads (1 with social) · niches=jeweller,clothing,cafe",
+    "error": null,
+    "created_at": "2026-07-12 11:59:15 UTC",
+    "updated_at": "2026-07-12 11:59:15 UTC",
+    "lead_ids": [
+      "75d22b48"
+    ]
+  },
+  {
     "id": "da6e3008",
     "task_type": "bulk_campaign",
     "title": "Bulk: 2 cities × 2 niches",

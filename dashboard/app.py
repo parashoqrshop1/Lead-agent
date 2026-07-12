@@ -17,7 +17,7 @@ import streamlit as st
 from agents.ads_agent import analyze_ads_heuristic
 from agents.experience_agent import build_experience_proposal, draft_quick_outreach
 from agents.lead_schema import ShopLead
-from agents.orchestrator import run_bulk_pipeline, run_full_pipeline
+from agents.orchestrator import run_bulk_pipeline, run_full_pipeline, run_hyperlocal_pipeline
 from agents.scraper_agent import health_check, search_leads, suggest_cities, suggest_niches
 from agents.scoring import SCORE_FACTOR_GUIDE, factors_table_for_lead
 from agents.sheets_store import push_leads_to_sheets, sheets_status
@@ -162,7 +162,7 @@ def page_home():
     c3.metric("Product ads", product_ads)
 
     st.markdown("#### Quick actions")
-    if st.button("⚡ Find more leads (bulk)", type="primary", use_container_width=True):
+    if st.button("📍 Hunt local niche shops", type="primary", use_container_width=True):
         st.session_state["nav"] = "Find leads"
         st.rerun()
     if st.button("📋 Open inbox", use_container_width=True):
@@ -319,7 +319,80 @@ def page_find():
     h = health_check()
     st.caption(f"Mode: `{h['scraper_mode']}` · Gemini: {'✅' if h['llm_key_present'] else '❌'}")
 
-    tab_bulk, tab_one, tab_real = st.tabs(["🔥 Bulk (more leads)", "🎯 One city", "🚀 Go real"])
+    tab_local, tab_bulk, tab_one, tab_real = st.tabs(
+        ["📍 Local niches", "🔥 Multi-city bulk", "🎯 One run", "🚀 Go real"]
+    )
+
+    with tab_local:
+        st.markdown(
+            """
+**Dedicated niche hunt in your town / city markets**  
+Finds independent shops that already use **Instagram / Facebook**  
+(paid ads **or** organic product posts) — ideal for website + product showcase.
+"""
+        )
+        region = st.selectbox(
+            "Region",
+            list(REGIONS.keys()),
+            format_func=lambda x: REGIONS[x]["label"],
+            key="loc_region",
+        )
+        city_opts = suggest_cities(region)
+        # put smaller towns first if present
+        default_city = "Akbarpur" if "Akbarpur" in city_opts else city_opts[0]
+        city = st.selectbox(
+            "City / town",
+            city_opts + ["Other…"],
+            index=(city_opts + ["Other…"]).index(default_city)
+            if default_city in city_opts
+            else 0,
+            key="loc_city",
+        )
+        if city == "Other…":
+            city = st.text_input("Type town / city", value="Akbarpur", key="loc_city_custom")
+
+        niche_opts = suggest_niches()
+        niche_ids = [n["id"] for n in niche_opts if n["id"] != "other_independent"]
+        niches = st.multiselect(
+            "Niches to hunt",
+            niche_ids,
+            default=["cafe", "jeweller", "clothing", "shoes", "multi_retail"],
+            format_func=lambda i: next(n["label"] for n in niche_opts if n["id"] == i),
+            key="loc_niches",
+        )
+        limit = st.slider("Target leads (unique)", 20, 120, 50, key="loc_limit")
+        deep = st.toggle("Scan local markets / roads (recommended)", value=True)
+        areas = st.slider("Max localities per city", 3, 12, 8, key="loc_areas")
+
+        st.caption(
+            "Examples scanned: Main Market, Station Road, Sadar Bazar, Civil Lines… "
+            "plus Instagram/Facebook product-shop queries."
+        )
+        if st.button("📍 Hunt local niche leads", type="primary", use_container_width=True):
+            if not city or not niches:
+                st.error("Pick city and at least one niche")
+            else:
+                with st.spinner(f"Hunting {', '.join(niches)} around {city}…"):
+                    try:
+                        result = run_hyperlocal_pipeline(
+                            region=region,
+                            city=city,
+                            niches=niches,
+                            limit=limit,
+                            deep_local=deep,
+                            max_localities=areas,
+                            analyze_ads=True,
+                            drop_chains=True,
+                            sync_sheets=True,
+                        )
+                        st.success(result["summary"])
+                        if result.get("errors"):
+                            for e in result["errors"][:5]:
+                                st.caption(f"• {e}")
+                        st.session_state["nav"] = "Leads"
+                        st.rerun()
+                    except Exception as e:
+                        st.error(str(e))
 
     with tab_bulk:
         st.write("Generate many leads across cities × niches in one tap.")
@@ -436,8 +509,15 @@ See **Sheets** page.
 | Mode | What it does | Free host OK? |
 |------|----------------|---------------|
 | `demo` | Sample leads, lots of volume | ✅ |
-| `light` | Real public-page + Gemini extract | ✅ best on Streamlit |
+| `light` | Real public-page + Gemini extract (local markets + social shops) | ✅ best on Streamlit |
 | `open_source` | Full ScrapeGraphAI + browser | ❌ needs VPS/PC |
+
+#### What “local niche hunt” targets
+- Dedicated niches: café, jeweller, clothing, shoes, multi-retail  
+- Local markets / roads inside the town (not only city center)  
+- Shops with Instagram/Facebook  
+- Paid product ads **or** organic product posts  
+- Social-first shops that need a website / product showcase  
 """
         )
         if h.get("scraper_mode") == "demo":

@@ -326,8 +326,14 @@ Return ONLY a JSON object.
 SEARCH_INDEPENDENT_PROMPT = """
 Find INDEPENDENT (non-chain) {niche_label} businesses in {city}, {country}.
 
-Prefer family-run / boutique / multi-brand / high product variety.
-Also note if they appear to run Instagram, Facebook, or Google ads — especially product ads.
+Agency sells websites + product showcase experiences to local independent shops.
+
+PRIORITIZE shops that:
+- Have Instagram and/or Facebook (paid ads OR organic product posts)
+- Post products / collections / menu / jewellery / clothing / footwear
+- Are Instagram-only or WhatsApp-only with weak/no website
+- Are family-run / boutique / multi-brand / high product variety
+- Operate in local markets (not only mall chains)
 
 Avoid chains: Starbucks, Zara, H&M, Tanishq, Bata flagships, Nike mono-stores, big supermarkets.
 
@@ -336,6 +342,9 @@ email, website, instagram, facebook, whatsapp, has_website, website_quality,
 is_independent, is_branded_chain, product_variety, carries_multiple_brands,
 independence_signals, pain_points, notes,
 runs_ads, ad_platforms, ad_topics, ad_style, has_instagram_ads, has_facebook_ads, has_google_ads, ads_evidence.
+
+If they showcase products on social without clear paid ads, still set ad_style=product_showcase
+and note organic social product posts.
 
 Return up to {limit} businesses as JSON {{"leads": [...]}}.
 """

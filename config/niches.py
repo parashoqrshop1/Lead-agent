@@ -394,26 +394,52 @@ REGIONS = {
         "label": "🇮🇳 India",
         "country": "India",
         "cities": [
+            "Akbarpur",
+            "Ayodhya",
+            "Faizabad",
+            "Sultanpur",
+            "Tanda",
+            "Lucknow",
+            "Kanpur",
+            "Varanasi",
+            "Prayagraj",
+            "Gorakhpur",
+            "Azamgarh",
+            "Bareilly",
+            "Meerut",
+            "Ghaziabad",
+            "Noida",
+            "Gurgaon",
             "Delhi",
+            "Agra",
+            "Mathura",
+            "Jhansi",
+            "Jaipur",
+            "Kota",
+            "Udaipur",
+            "Jodhpur",
+            "Pune",
+            "Nashik",
+            "Nagpur",
             "Mumbai",
+            "Surat",
+            "Ahmedabad",
+            "Vadodara",
+            "Indore",
+            "Bhopal",
+            "Patna",
+            "Ranchi",
+            "Raipur",
+            "Chandigarh",
+            "Ludhiana",
+            "Amritsar",
+            "Dehradun",
             "Bangalore",
             "Hyderabad",
             "Chennai",
             "Kolkata",
-            "Pune",
-            "Ahmedabad",
-            "Jaipur",
-            "Lucknow",
-            "Kanpur",
-            "Akbarpur",
-            "Varanasi",
-            "Noida",
-            "Gurgaon",
-            "Indore",
-            "Chandigarh",
-            "Surat",
-            "Nagpur",
-            "Patna",
+            "Coimbatore",
+            "Mysore",
         ],
     },
     "us": {
@@ -477,5 +503,30 @@ def packages_for(niche_id: str) -> List[dict]:
 
 
 def search_queries_for(niche_id: str, city: str) -> List[str]:
+    """Classic niche queries for a city (or city+area place string)."""
     niche = NICHES.get(niche_id) or NICHES["other_independent"]
     return [q.format(city=city) for q in niche.get("search_queries", [])]
+
+
+def social_discovery_queries(niche_id: str, place: str) -> List[str]:
+    """
+    Prefer shops that already use Instagram/Facebook (ads OR organic product posts)
+    and are independent / local — ideal for website + product showcase services.
+    """
+    from config.localities import marketing_intent_queries, social_niche_queries
+
+    label = niche_label(niche_id)
+    queries = social_niche_queries(label, place) + marketing_intent_queries(label, place)
+    # also include classic queries with place substituted
+    niche = NICHES.get(niche_id) or NICHES["other_independent"]
+    for q in niche.get("search_queries", []):
+        queries.append(q.format(city=place))
+    # unique
+    seen = set()
+    out = []
+    for q in queries:
+        k = q.lower().strip()
+        if k and k not in seen:
+            seen.add(k)
+            out.append(q)
+    return out

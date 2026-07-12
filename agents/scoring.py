@@ -99,8 +99,18 @@ SCORE_FACTOR_GUIDE: List[Dict[str, Any]] = [
     },
     {
         "factor": "Social profiles",
-        "points": 3,
-        "rule": "+3 if Instagram or Facebook profile exists.",
+        "points": "3–12",
+        "rule": "+12 Instagram · +8 Facebook · +4 if both · organic product posts +8 even without paid ads.",
+    },
+    {
+        "factor": "Product showcase on social (no paid ads)",
+        "points": 12,
+        "rule": "+12 if shop posts products on IG/FB but is not necessarily running paid ads — still wants showcase/website.",
+    },
+    {
+        "factor": "Marketing / website intent",
+        "points": 8,
+        "rule": "+8 if signals they want online growth (Instagram-only, WhatsApp catalogue, no site, hiring digital help).",
     },
     {
         "factor": "Core niche",
@@ -273,13 +283,80 @@ def compute_score_breakdown(lead: ShopLead) -> Tuple[int, List[Dict[str, Any]], 
                 "Spending on ads but no strong website to convert — premium agency fit",
             )
 
-    # Contact
+    # Contact + social (social-first shops are prime agency targets)
     if lead.phone or lead.whatsapp:
         add("Phone / WhatsApp", 8, lead.phone or lead.whatsapp or "reachable")
     if lead.email:
         add("Email", 4, lead.email)
-    if lead.instagram or lead.facebook:
-        add("Social profiles", 3, "Instagram/Facebook present")
+
+    has_ig = bool(lead.instagram)
+    has_fb = bool(lead.facebook)
+    if has_ig and has_fb:
+        add("Instagram + Facebook", 12, "Strong social presence")
+    elif has_ig:
+        add("Instagram profile", 10, lead.instagram or "IG present")
+    elif has_fb:
+        add("Facebook page", 8, lead.facebook or "FB present")
+
+    # Organic product showcase without paid ads still = high intent for website
+    organic_product = False
+    blob = " ".join(
+        [
+            lead.ad_topics or "",
+            lead.notes or "",
+            lead.pain_points or "",
+            lead.ads_evidence or "",
+            lead.independence_signals or "",
+        ]
+    ).lower()
+    organic_hits = [
+        "reel",
+        "new arrival",
+        "collection",
+        "lookbook",
+        "catalogue",
+        "catalog",
+        "product post",
+        "showcase",
+        "instagram only",
+        "only on instagram",
+        "whatsapp catalogue",
+        "whatsapp catalog",
+    ]
+    if (has_ig or has_fb) and any(h in blob for h in organic_hits + product_topic_hits):
+        organic_product = True
+    if organic_product and not runs:
+        add(
+            "Organic product showcase on social",
+            12,
+            "Posts products on social without clear paid ads — still wants better showcase/site",
+        )
+        if not style:
+            lead.ad_style = lead.ad_style or "product_showcase"
+
+    # Marketing / website willingness signals
+    intent_hits = [
+        "no website",
+        "instagram only",
+        "only instagram",
+        "whatsapp only",
+        "need website",
+        "want website",
+        "online presence",
+        "digital marketing",
+        "google business",
+        "grow online",
+        "catalogue",
+        "catalog",
+    ]
+    if any(h in blob for h in intent_hits) or (
+        (has_ig or has_fb) and (lead.has_website is False or not lead.website)
+    ):
+        add(
+            "Marketing / website intent",
+            8,
+            "Social-first or weak web — open to website/product showcase services",
+        )
 
     if lead.niche in ("cafe", "jeweller", "clothing", "shoes", "multi_retail"):
         add("Core niche", 6, f"Niche={lead.niche}")

@@ -1,7 +1,12 @@
 """Multi-agent lead system for independent-shop digital experiences."""
 from agents.ads_agent import analyze_ads_heuristic, enrich_ads_batch
 from agents.experience_agent import build_experience_proposal, draft_quick_outreach
-from agents.orchestrator import run_bulk_pipeline, run_discover_only, run_full_pipeline
+from agents.orchestrator import (
+    run_bulk_pipeline,
+    run_discover_only,
+    run_full_pipeline,
+    run_hyperlocal_pipeline,
+)
 from agents.qualify_agent import filter_icp, qualify_batch, qualify_lead
 from agents.scraper_agent import (
     enrich_lead_from_url,
@@ -41,6 +46,8 @@ __all__ = [
     "enrich_lead_from_url",
     "run_campaign",
     "run_full_pipeline",
+    "run_bulk_pipeline",
+    "run_hyperlocal_pipeline",
     "run_discover_only",
     "build_experience_proposal",
     "draft_quick_outreach",
