@@ -79,7 +79,11 @@ def _gemini_json(prompt: str) -> Any:
     try:
         import google.generativeai as genai
     except ImportError as e:
-        raise RuntimeError("pip install google-generativeai") from e
+        raise RuntimeError(
+            "google-generativeai is not installed on this host. "
+            "Demo mode works without it. For real scrape, use Python 3.12 Cloud "
+            "and add google-generativeai to requirements."
+        ) from e
 
     genai.configure(api_key=key)
     model_name = (s.get("llm_model") or "gemini-2.0-flash").split("/")[-1]

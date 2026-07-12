@@ -1,6 +1,6 @@
 """
-Independent Shop Lead Agent — mobile-first dashboard
-FREE: Gemini light scrape + demo bulk + Sheets + scoring + ads intel
+Independent Shop Lead Agent — Streamlit Cloud safe entrypoint.
+Keep top-level imports minimal to avoid native segfaults.
 """
 from __future__ import annotations
 
@@ -12,11 +12,6 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 import streamlit as st
-import pandas as pd
-
-# Keep startup imports minimal (Streamlit Cloud segfaults on heavy native stacks).
-from config.niches import REGIONS, niche_label
-from config.settings import LEAD_STATUSES, get_settings
 
 st.set_page_config(
     page_title="Lead Agent",
@@ -26,14 +21,19 @@ st.set_page_config(
 )
 
 
-# ---------- auth ----------
+def _safe_import_error(title: str, err: Exception) -> None:
+    st.error(f"{title}: {err}")
+    st.info(
+        "If this is a Cloud crash loop, set Python **3.12** in Streamlit app settings "
+        "(Advanced settings), then Reboot. Streamlit ignores runtime.txt."
+    )
 
-def _read_dashboard_password() -> str:
+
+def _read_password() -> str:
     try:
-        if hasattr(st, "secrets"):
-            val = st.secrets.get("DASHBOARD_PASSWORD", None)
-            if val is not None and str(val).strip() != "":
-                return str(val).strip()
+        val = st.secrets.get("DASHBOARD_PASSWORD", None)
+        if val is not None and str(val).strip():
+            return str(val).strip()
     except Exception:
         pass
     import os
@@ -41,106 +41,52 @@ def _read_dashboard_password() -> str:
     return (os.getenv("DASHBOARD_PASSWORD") or "change-me-now").strip() or "change-me-now"
 
 
-def check_password() -> bool:
+def login() -> bool:
     if st.session_state.get("authenticated"):
         return True
-    expected = _read_dashboard_password()
+    expected = _read_password()
     st.markdown("## 🔐 Lead Agent")
-    st.caption("Independent shops · product-ad scoring · free stack")
-    with st.form("login_form"):
+    st.caption("Independent shops · local niches · free stack")
+    with st.form("login"):
         pwd = st.text_input("Password", type="password")
         ok = st.form_submit_button("Enter", type="primary", use_container_width=True)
     if ok:
         if (pwd or "").strip() == expected:
             st.session_state["authenticated"] = True
             st.rerun()
-        st.error(f"Wrong password (typed {len((pwd or '').strip())} chars, expected {len(expected)})")
+        st.error("Wrong password")
     if expected == "change-me-now":
+        st.caption("Default password: `change-me-now`")
         if st.button("Open with default password", use_container_width=True):
             st.session_state["authenticated"] = True
             st.rerun()
     return False
 
 
-def inject_css():
+def inject_css() -> None:
     st.markdown(
         """
         <style>
-        .block-container { padding-top: 0.8rem; padding-bottom: 5rem; max-width: 720px; }
-        div[data-testid="stMetric"] {
-            background: #111827; border: 1px solid #334155; border-radius: 14px;
-            padding: 10px 12px;
-        }
-        div[data-testid="stMetric"] label { color: #94a3b8 !important; font-size: 0.8rem !important; }
-        div[data-testid="stMetric"] [data-testid="stMetricValue"] {
-            color: #f8fafc !important; font-size: 1.35rem !important;
-        }
+        .block-container { padding-top: 0.8rem; max-width: 720px; }
         .lead-card {
-            border: 1px solid #334155; border-radius: 16px; padding: 14px 14px 10px;
-            margin: 0 0 12px 0; background: linear-gradient(180deg, #0f172a 0%, #111827 100%);
+            border: 1px solid #334155; border-radius: 16px; padding: 14px;
+            margin: 0 0 12px 0; background: #0f172a;
         }
-        .lead-name { font-size: 1.05rem; font-weight: 700; color: #f8fafc; margin: 0 0 4px 0; }
-        .lead-meta { color: #94a3b8; font-size: 0.9rem; margin: 0 0 8px 0; }
+        .lead-name { font-weight: 700; color: #f8fafc; }
+        .lead-meta { color: #94a3b8; font-size: 0.9rem; }
         .pill {
-            display: inline-block; padding: 3px 10px; border-radius: 999px;
-            font-size: 0.78rem; font-weight: 700; margin-right: 6px; margin-bottom: 4px;
+            display:inline-block; padding:3px 10px; border-radius:999px;
+            font-size:0.78rem; font-weight:700; margin-right:6px;
         }
-        .pill-hi { background: #14532d; color: #86efac; }
-        .pill-mid { background: #713f12; color: #fde68a; }
-        .pill-lo { background: #7f1d1d; color: #fecaca; }
-        .pill-ad { background: #1e3a8a; color: #bfdbfe; }
-        .pill-web { background: #334155; color: #e2e8f0; }
-        .bottom-nav-spacer { height: 12px; }
-        /* bigger touch targets */
-        button[kind="primary"], button[kind="secondary"] { min-height: 2.7rem; }
-        .stSelectbox, .stMultiSelect, .stTextInput, .stTextArea { margin-bottom: 0.2rem; }
+        .pill-hi { background:#14532d; color:#86efac; }
+        .pill-mid { background:#713f12; color:#fde68a; }
+        .pill-lo { background:#7f1d1d; color:#fecaca; }
+        .pill-ad { background:#1e3a8a; color:#bfdbfe; }
+        button { min-height: 2.6rem; }
         </style>
         """,
         unsafe_allow_html=True,
     )
-
-
-
-# ---------- lazy loaders (avoid heavy imports at process start) ----------
-
-def _storage():
-    from agents import storage as m
-    return m
-
-
-def _scoring():
-    from agents import scoring as m
-    return m
-
-
-def _scraper():
-    from agents import scraper_agent as m
-    return m
-
-
-def _orchestrator():
-    from agents import orchestrator as m
-    return m
-
-
-def _experience():
-    from agents import experience_agent as m
-    return m
-
-
-def _ads():
-    from agents import ads_agent as m
-    return m
-
-
-def _sheets():
-    from agents import sheets_store as m
-    return m
-
-
-def _lead_schema():
-    from agents import lead_schema as m
-    return m
 
 
 def score_pill(score: int) -> str:
@@ -148,149 +94,122 @@ def score_pill(score: int) -> str:
     return f'<span class="pill {cls}">{score}/100</span>'
 
 
-def lead_card_html(lead) -> str:
+def card_html(lead) -> str:
     ads = ""
-    if lead.runs_ads:
-        style = lead.ad_style or "ads"
-        ads = f'<span class="pill pill-ad">📣 {style}</span>'
-    web = "no website" if not lead.website else (lead.website_quality or "has site")
+    if getattr(lead, "runs_ads", None) or (getattr(lead, "ad_style", None) or "").startswith("product"):
+        ads = f'<span class="pill pill-ad">📣 {lead.ad_style or "social"}</span>'
     return f"""
     <div class="lead-card">
       <div class="lead-name">{lead.business_name}</div>
-      <div class="lead-meta">{niche_label(lead.niche or '')} · {lead.city or '—'} · {lead.phone or lead.whatsapp or 'no phone'}</div>
-      {score_pill(lead.lead_score)}
-      <span class="pill pill-web">{web}</span>
+      <div class="lead-meta">{lead.niche or 'shop'} · {lead.city or '—'} · {lead.phone or lead.whatsapp or 'no phone'}</div>
+      {score_pill(int(lead.lead_score or 0))}
       {ads}
+      <div class="lead-meta">IG: {lead.instagram or '—'} · FB: {lead.facebook or '—'}</div>
     </div>
     """
 
 
-# ---------- pages ----------
-
-def page_home():
+def page_home(storage, scraper):
     st.markdown("### 🏠 Home")
-    df = _storage().leads_dataframe()
-    h = _scraper().health_check()
-    total = 0 if df.empty else len(df)
-    product_ads = 0
-    high = 0
-    if total:
-        if "ad_style" in df:
-            product_ads = int(
-                df["ad_style"].fillna("").str.lower().isin(
-                    ["product_showcase", "product", "mixed", "catalogue"]
-                ).sum()
-            )
-        high = int((df["lead_score"] >= 70).sum())
+    try:
+        leads = [l for l in storage.load_leads() if not l.is_branded_chain]
+    except Exception as e:
+        _safe_import_error("Could not load leads", e)
+        return
 
+    h = scraper.health_check()
     c1, c2, c3 = st.columns(3)
-    c1.metric("Leads", total)
-    c2.metric("Score ≥70", high)
-    c3.metric("Product ads", product_ads)
+    c1.metric("Leads", len(leads))
+    c2.metric("Score ≥70", sum(1 for l in leads if (l.lead_score or 0) >= 70))
+    c3.metric("With social", sum(1 for l in leads if l.instagram or l.facebook))
 
-    st.markdown("#### Quick actions")
-    if st.button("📍 Hunt local niche shops", type="primary", use_container_width=True):
+    st.info(
+        f"Mode: **{h.get('scraper_mode')}** · Ready: **{h.get('ready')}** · "
+        f"Gemini key: **{'yes' if h.get('llm_key_present') else 'no'}**"
+    )
+    if h.get("scraper_mode") == "demo":
+        st.warning(
+            "Demo mode (sample leads). For real shops later: Secrets "
+            '`SCRAPER_MODE="light"` + GEMINI_API_KEY (needs stable Cloud Python).'
+        )
+
+    if st.button("📍 Hunt local niche leads", type="primary", use_container_width=True):
         st.session_state["nav"] = "Find leads"
         st.rerun()
     if st.button("📋 Open inbox", use_container_width=True):
         st.session_state["nav"] = "Leads"
         st.rerun()
 
-    mode = h.get("scraper_mode")
-    ready = h.get("ready")
-    st.info(
-        f"Mode: **{mode}** · Ready: **{'yes' if ready else 'no'}** · "
-        f"Gemini key: **{'yes' if h.get('llm_key_present') else 'no'}**"
-    )
-    if mode == "demo":
-        st.warning(
-            "You are in **demo mode** (sample leads). "
-            "For real shops: set `SCRAPER_MODE = \"light\"` + free `GEMINI_API_KEY` in Secrets. "
-            "See **Go real** page."
-        )
-
+    top = sorted(leads, key=lambda x: x.lead_score or 0, reverse=True)[:5]
     st.markdown("#### Top leads")
-    leads = sorted(_storage().load_leads(), key=lambda x: x.lead_score, reverse=True)
-    leads = [l for l in leads if not l.is_branded_chain][:5]
-    if not leads:
-        st.caption("No leads yet — tap **Find more leads**.")
-    for lead in leads:
-        st.markdown(lead_card_html(lead), unsafe_allow_html=True)
-        if st.button("Open", key=f"home_{lead.id}", use_container_width=True):
-            st.session_state["selected_lead_id"] = lead.id
-            st.session_state["nav"] = "Leads"
-            st.rerun()
+    if not top:
+        st.caption("No leads yet — open Find leads.")
+    for lead in top:
+        st.markdown(card_html(lead), unsafe_allow_html=True)
 
 
-def page_leads():
+def page_leads(storage, experience, ads, scoring):
     st.markdown("### 📋 Leads")
-    leads = [l for l in _storage().load_leads() if not l.is_branded_chain]
+    leads = [l for l in storage.load_leads() if not l.is_branded_chain]
     if not leads:
-        st.warning("No leads yet.")
-        if st.button("Find leads now", type="primary", use_container_width=True):
-            st.session_state["nav"] = "Find leads"
-            st.rerun()
+        st.warning("No leads yet. Use Find leads.")
         return
 
-    # simple mobile filters
-    q = st.text_input("Search name / city / phone", placeholder="e.g. Lucknow or jewellery")
-    f1, f2 = st.columns(2)
-    with f1:
-        min_score = st.select_slider("Min score", options=[0, 40, 60, 70, 80, 90], value=0)
-    with f2:
-        only_product = st.toggle("Product ads only", value=False)
+    q = st.text_input("Search name / city / phone")
+    min_score = st.select_slider("Min score", options=[0, 40, 60, 70, 80, 90], value=0)
+    only_social = st.toggle("Only with Instagram/Facebook", value=False)
+    only_product = st.toggle("Product ads / product posts", value=False)
 
     filtered = []
     for l in leads:
-        if l.lead_score < min_score:
+        if (l.lead_score or 0) < min_score:
+            continue
+        if only_social and not (l.instagram or l.facebook):
             continue
         if only_product and (l.ad_style or "").lower() not in (
             "product_showcase",
             "product",
             "mixed",
             "catalogue",
-        ):
+        ) and not l.runs_ads:
             continue
         blob = f"{l.business_name} {l.city} {l.phone} {l.niche} {l.ad_topics}".lower()
         if q and q.lower() not in blob:
             continue
         filtered.append(l)
-    filtered.sort(key=lambda x: x.lead_score, reverse=True)
+    filtered.sort(key=lambda x: x.lead_score or 0, reverse=True)
     st.caption(f"{len(filtered)} leads")
 
-    # choose lead with big labels (name not cryptic id)
+    if not filtered:
+        st.info("No matches.")
+        return
+
     labels = {
         f"{l.lead_score} · {l.business_name} · {l.city or ''}": l.id for l in filtered
     }
-    if not labels:
-        st.info("No leads match filters.")
-        return
-
-    default_id = st.session_state.get("selected_lead_id")
     keys = list(labels.keys())
-    default_idx = 0
-    if default_id:
-        for i, k in enumerate(keys):
-            if labels[k] == default_id:
-                default_idx = i
-                break
-    choice = st.selectbox("Pick a lead", keys, index=default_idx)
-    lead_id = labels[choice]
-    lead = next(l for l in filtered if l.id == lead_id)
-    st.session_state["selected_lead_id"] = lead.id
+    choice = st.selectbox("Pick a lead", keys)
+    lead = next(l for l in filtered if l.id == labels[choice])
 
-    st.markdown(lead_card_html(lead), unsafe_allow_html=True)
-    st.write(f"**Ads:** {lead.ad_platforms or '—'} · {lead.ad_topics or '—'}")
+    st.markdown(card_html(lead), unsafe_allow_html=True)
+    st.write(f"**Phone:** {lead.phone or lead.whatsapp or '—'}")
+    st.write(f"**Email:** {lead.email or '—'}")
+    st.write(f"**Instagram:** {lead.instagram or '—'}")
+    st.write(f"**Facebook:** {lead.facebook or '—'}")
+    st.write(f"**Website:** {lead.website or 'none'}")
+    st.write(f"**Ads:** {lead.ad_platforms or '—'} · {lead.ad_style or '—'} · {lead.ad_topics or '—'}")
     st.write(f"**Pain:** {lead.pain_points or '—'}")
 
-    with st.expander("Why this score?", expanded=False):
-        factors = _scoring().factors_table_for_lead(lead)
+    with st.expander("Why this score?"):
+        factors = scoring.factors_table_for_lead(lead)
         if factors:
             import pandas as pd
+
             st.dataframe(pd.DataFrame(factors), use_container_width=True, hide_index=True)
         st.caption(lead.score_breakdown or "")
 
-    st.markdown("#### Actions")
+    from config.settings import LEAD_STATUSES
+
     status = st.selectbox(
         "Status",
         LEAD_STATUSES,
@@ -298,111 +217,96 @@ def page_leads():
     )
     notes = st.text_area("Notes", value=lead.notes or "", height=80)
     if st.button("💾 Save", type="primary", use_container_width=True):
-        _storage().update_lead(lead.id, status=status, notes=notes)
+        storage.update_lead(lead.id, status=status, notes=notes)
         st.success("Saved")
         st.rerun()
 
     if st.button("✨ WhatsApp pitch", use_container_width=True):
-        prop = _experience().build_experience_proposal(lead, use_llm=False)
-        st.session_state["wa_draft"] = prop.outreach_whatsapp
-        st.session_state["email_draft"] = prop.outreach_email
+        prop = experience.build_experience_proposal(lead, use_llm=False)
+        st.session_state["wa"] = prop.outreach_whatsapp
         st.success(prop.package_name)
 
-    if "wa_draft" in st.session_state:
-        st.text_area("Copy WhatsApp", value=st.session_state.get("wa_draft") or _experience().draft_quick_outreach(lead), height=180)
-        st.text_area("Email draft", value=st.session_state.get("email_draft") or "", height=140)
-    else:
-        st.text_area("Quick WhatsApp", value=_experience().draft_quick_outreach(lead), height=160)
+    st.text_area(
+        "Copy WhatsApp",
+        value=st.session_state.get("wa") or experience.draft_quick_outreach(lead),
+        height=180,
+    )
 
-    b1, b2 = st.columns(2)
-    with b1:
+    c1, c2 = st.columns(2)
+    with c1:
         if st.button("📣 Re-check ads", use_container_width=True):
-            _storage().upsert_leads([_ads().analyze_ads_heuristic(lead)])
+            storage.upsert_leads([ads.analyze_ads_heuristic(lead)])
             st.rerun()
-    with b2:
+    with c2:
         if st.button("🗑 Delete", use_container_width=True):
-            _storage().delete_lead(lead.id)
-            st.session_state.pop("selected_lead_id", None)
+            storage.delete_lead(lead.id)
             st.rerun()
 
     if st.button("🧹 Remove duplicate leads", use_container_width=True):
-        result = _storage().purge_duplicate_leads()
-        st.success(
-            f"Cleaned: {result['before']} → {result['after']} "
-            f"(removed {result['removed']} duplicates)"
-        )
+        result = storage.purge_duplicate_leads()
+        st.success(f"Cleaned {result['before']} → {result['after']} (removed {result['removed']})")
         st.rerun()
 
+    import pandas as pd
+
     st.download_button(
-        "⬇️ Download CSV",
-        data=_storage().leads_dataframe().to_csv(index=False).encode("utf-8"),
+        "⬇️ CSV",
+        data=storage.leads_dataframe().to_csv(index=False).encode("utf-8"),
         file_name="leads.csv",
         mime="text/csv",
         use_container_width=True,
     )
 
 
-def page_find():
+def page_find(orchestrator, scraper):
     st.markdown("### ⚡ Find leads")
-    h = _scraper().health_check()
-    st.caption(f"Mode: `{h['scraper_mode']}` · Gemini: {'✅' if h['llm_key_present'] else '❌'}")
+    h = scraper.health_check()
+    st.caption(f"Mode: `{h.get('scraper_mode')}` · Gemini key: {'✅' if h.get('llm_key_present') else '❌'}")
 
-    tab_local, tab_bulk, tab_one, tab_real = st.tabs(
-        ["📍 Local niches", "🔥 Multi-city bulk", "🎯 One run", "🚀 Go real"]
-    )
+    from config.niches import REGIONS
+
+    tab_local, tab_bulk, tab_real = st.tabs(["📍 Local niches", "🔥 Multi-city", "🚀 Go real"])
 
     with tab_local:
-        st.markdown(
-            """
-**Dedicated niche hunt in your town / city markets**  
-Finds independent shops that already use **Instagram / Facebook**  
-(paid ads **or** organic product posts) — ideal for website + product showcase.
-"""
+        st.write(
+            "Hunt dedicated niches in local markets. Prefers shops with Instagram/Facebook "
+            "(ads or organic product posts)."
         )
         region = st.selectbox(
             "Region",
             list(REGIONS.keys()),
             format_func=lambda x: REGIONS[x]["label"],
-            key="loc_region",
+            key="r1",
         )
-        city_opts = _scraper().suggest_cities(region)
-        # put smaller towns first if present
-        default_city = "Akbarpur" if "Akbarpur" in city_opts else city_opts[0]
+        cities = scraper.suggest_cities(region)
+        default = "Akbarpur" if "Akbarpur" in cities else cities[0]
         city = st.selectbox(
             "City / town",
-            city_opts + ["Other…"],
-            index=(city_opts + ["Other…"]).index(default_city)
-            if default_city in city_opts
-            else 0,
-            key="loc_city",
+            cities + ["Other…"],
+            index=(cities + ["Other…"]).index(default) if default in cities else 0,
+            key="c1",
         )
         if city == "Other…":
-            city = st.text_input("Type town / city", value="Akbarpur", key="loc_city_custom")
-
-        niche_opts = _scraper().suggest_niches()
+            city = st.text_input("Town name", value="Akbarpur", key="c1x")
+        niche_opts = scraper.suggest_niches()
         niche_ids = [n["id"] for n in niche_opts if n["id"] != "other_independent"]
         niches = st.multiselect(
-            "Niches to hunt",
+            "Niches",
             niche_ids,
             default=["cafe", "jeweller", "clothing", "shoes", "multi_retail"],
             format_func=lambda i: next(n["label"] for n in niche_opts if n["id"] == i),
-            key="loc_niches",
+            key="n1",
         )
-        limit = st.slider("Target leads (unique)", 20, 120, 50, key="loc_limit")
-        deep = st.toggle("Scan local markets / roads (recommended)", value=True)
-        areas = st.slider("Max localities per city", 3, 12, 8, key="loc_areas")
-
-        st.caption(
-            "Examples scanned: Main Market, Station Road, Sadar Bazar, Civil Lines… "
-            "plus Instagram/Facebook product-shop queries."
-        )
+        limit = st.slider("Target unique leads", 20, 120, 50, key="l1")
+        deep = st.toggle("Scan local markets / roads", value=True)
+        areas = st.slider("Max localities", 3, 12, 8, key="a1")
         if st.button("📍 Hunt local niche leads", type="primary", use_container_width=True):
             if not city or not niches:
-                st.error("Pick city and at least one niche")
+                st.error("Pick city + niches")
             else:
-                with st.spinner(f"Hunting {', '.join(niches)} around {city}…"):
+                with st.spinner(f"Hunting around {city}…"):
                     try:
-                        result = _orchestrator().run_hyperlocal_pipeline(
+                        result = orchestrator.run_hyperlocal_pipeline(
                             region=region,
                             city=city,
                             niches=niches,
@@ -411,206 +315,109 @@ Finds independent shops that already use **Instagram / Facebook**
                             max_localities=areas,
                             analyze_ads=True,
                             drop_chains=True,
-                            sync_sheets=True,
+                            sync_sheets=False,  # avoid sheets crash if libs missing
                         )
                         st.success(result["summary"])
-                        if result.get("errors"):
-                            for e in result["errors"][:5]:
-                                st.caption(f"• {e}")
                         st.session_state["nav"] = "Leads"
                         st.rerun()
                     except Exception as e:
                         st.error(str(e))
 
     with tab_bulk:
-        st.write("Generate many leads across cities × niches in one tap.")
         region = st.selectbox(
             "Region",
             list(REGIONS.keys()),
             format_func=lambda x: REGIONS[x]["label"],
-            key="bulk_region",
+            key="r2",
         )
-        city_opts = _scraper().suggest_cities(region)
+        city_opts = scraper.suggest_cities(region)
         cities = st.multiselect(
             "Cities",
             city_opts,
-            default=[c for c in ["Lucknow", "Kanpur", "Akbarpur", "Jaipur", "Pune"] if c in city_opts][:4]
+            default=[c for c in ["Akbarpur", "Lucknow", "Kanpur", "Ayodhya"] if c in city_opts][:3]
             or city_opts[:3],
+            key="c2",
         )
-        niche_opts = _scraper().suggest_niches()
-        niche_ids = [n["id"] for n in niche_opts if n["id"] != "other_independent"]
+        niche_opts = scraper.suggest_niches()
         niches = st.multiselect(
             "Niches",
-            niche_ids,
+            [n["id"] for n in niche_opts if n["id"] != "other_independent"],
             default=["cafe", "jeweller", "clothing", "shoes"],
             format_func=lambda i: next(n["label"] for n in niche_opts if n["id"] == i),
+            key="n2",
         )
-        per = st.slider("Leads per city×niche", 10, 40, 20)
-        if st.button("🚀 Run bulk find", type="primary", use_container_width=True):
-            if not cities or not niches:
-                st.error("Pick at least 1 city and 1 niche")
-            else:
-                with st.spinner("Finding leads…"):
-                    try:
-                        result = _orchestrator().run_bulk_pipeline(
-                            region=region,
-                            cities=cities,
-                            niches=niches,
-                            limit_per=per,
-                            analyze_ads=True,
-                            drop_chains=True,
-                            sync_sheets=True,
-                        )
-                        st.success(result["summary"])
-                        st.session_state["nav"] = "Leads"
-                        st.rerun()
-                    except Exception as e:
-                        st.error(str(e))
-
-    with tab_one:
-        region = st.selectbox(
-            "Region",
-            list(REGIONS.keys()),
-            format_func=lambda x: REGIONS[x]["label"],
-            key="one_region",
-        )
-        city = st.selectbox("City", _scraper().suggest_cities(region) + ["Other…"], key="one_city")
-        if city == "Other…":
-            city = st.text_input("City name", value="Akbarpur")
-        niche_opts = _scraper().suggest_niches()
-        niche = st.selectbox(
-            "Niche",
-            [n["id"] for n in niche_opts],
-            format_func=lambda i: next(n["label"] for n in niche_opts if n["id"] == i),
-        )
-        limit = st.slider("Max leads", 10, 50, 25)
-        if st.button("Run one city", type="primary", use_container_width=True):
-            with st.spinner("Working…"):
+        per = st.slider("Leads per city×niche", 10, 40, 20, key="p2")
+        if st.button("🚀 Run multi-city bulk", type="primary", use_container_width=True):
+            with st.spinner("Bulk finding…"):
                 try:
-                    result = _orchestrator().run_full_pipeline(
+                    result = orchestrator.run_bulk_pipeline(
                         region=region,
-                        city=city,
-                        niche=niche,
-                        limit=limit,
-                        auto_experience=False,
+                        cities=cities,
+                        niches=niches,
+                        limit_per=per,
                         analyze_ads=True,
                         drop_chains=True,
-                        sync_sheets=True,
+                        sync_sheets=False,
                     )
                     st.success(result["summary"])
+                    st.session_state["nav"] = "Leads"
+                    st.rerun()
                 except Exception as e:
                     st.error(str(e))
 
     with tab_real:
         st.markdown(
             """
-### Make it REAL (exact steps)
+### Make leads REAL
 
-Demo mode only creates practice shops. For real independent shops:
-
-#### 1) Free Gemini key
-1. Open https://aistudio.google.com/apikey  
-2. Create API key → copy it  
-
-#### 2) Streamlit Secrets
-App → ⋮ → **Settings → Secrets** → paste:
+1. Streamlit app settings → set **Python 3.12** if available (Cloud ignores runtime.txt)
+2. Add to Secrets:
 
 ```toml
 SCRAPER_MODE = "light"
-GEMINI_API_KEY = "YOUR_KEY_HERE"
-LLM_MODEL = "google_genai/gemini-2.0-flash"
+GEMINI_API_KEY = "your_free_key_from_aistudio.google.com"
 DASHBOARD_PASSWORD = "your-password"
-AGENCY_NAME = "Your Web Agency"
-AGENCY_WHATSAPP = "+91XXXXXXXXXX"
 ```
 
-#### 3) Save → Reboot app → login
+3. Also add to `requirements.txt` on a stable Python 3.12 deploy:
+   - `google-generativeai`
+   - `gspread` / `google-auth` (optional Sheets)
 
-#### 4) Run **Bulk find** again
-Use 3–5 cities × 4 niches.  
-`light` mode = free Gemini reads public search pages (no Playwright).
+4. Reboot → **Local niches** again
 
-#### 5) Optional: Google Sheets (keep leads forever)
-See **Sheets** page.
-
-#### Modes
-| Mode | What it does | Free host OK? |
-|------|----------------|---------------|
-| `demo` | Sample leads, lots of volume | ✅ |
-| `light` | Real public-page + Gemini extract (local markets + social shops) | ✅ best on Streamlit |
-| `open_source` | Full ScrapeGraphAI + browser | ❌ needs VPS/PC |
-
-#### What “local niche hunt” targets
-- Dedicated niches: café, jeweller, clothing, shoes, multi-retail  
-- Local markets / roads inside the town (not only city center)  
-- Shops with Instagram/Facebook  
-- Paid product ads **or** organic product posts  
-- Social-first shops that need a website / product showcase  
+### Contact fields collected
+Phone, WhatsApp, email, Instagram, Facebook, website, address, ads info, score factors —
+when publicly available.
 """
         )
-        if h.get("scraper_mode") == "demo":
-            st.error("Still on demo — change Secrets to `light` + Gemini for real shops.")
-        elif h.get("ready"):
-            st.success("Ready for real/light scraping.")
 
 
-def page_sheets():
-    st.markdown("### ☁️ Sheets")
-    sh = _sheets().sheets_status()
-    st.write("Connected:" , "✅" if sh["enabled"] else "❌")
-    st.markdown(
-        """
-1. Create Google Sheet → copy Sheet ID  
-2. Cloud Console → enable Sheets + Drive API  
-3. Service account JSON key  
-4. Share sheet with service account email (Editor)  
-5. Secrets:
-
-```toml
-GOOGLE_SHEET_ID = "..."
-GOOGLE_SHEET_WORKSHEET = "Leads"
-SHEETS_AUTO_SYNC = "true"
-GOOGLE_SERVICE_ACCOUNT_JSON = \"\"\"{...}\"\"\"
-```
-"""
-    )
-    if st.button("Push all leads to Sheets", type="primary", use_container_width=True):
-        try:
-            st.success(_sheets().push_leads_to_sheets(_storage().load_leads()))
-        except Exception as e:
-            st.error(str(e))
-    if st.button("Download Excel", use_container_width=True):
-        path = _storage().export_leads_excel()
-        with open(path, "rb") as f:
-            st.download_button("Save leads.xlsx", f, "leads.xlsx", use_container_width=True)
-
-
-def page_guide():
+def page_guide(scoring, storage):
     st.markdown("### 🧮 Score guide")
     st.write(
-        "Highest score = independent shop + **product ads** (IG/FB/Google) + weak/no website."
+        "High score = independent niche shop + social product posts/ads + weak/no website."
     )
     import pandas as pd
-    st.dataframe(pd.DataFrame(_scoring().SCORE_FACTOR_GUIDE), use_container_width=True, hide_index=True)
-    st.markdown("#### Recent activity")
-    acts = _storage().recent_activity(12)
+
+    st.dataframe(pd.DataFrame(scoring.SCORE_FACTOR_GUIDE), use_container_width=True, hide_index=True)
+    acts = storage.recent_activity(10)
     if acts:
-        import pandas as pd
         st.dataframe(pd.DataFrame(acts), use_container_width=True, hide_index=True)
 
 
-def page_settings():
+def page_settings(scraper):
     st.markdown("### ⚙️ Settings")
+    from config.settings import get_settings
+
     s = get_settings()
-    h = _scraper().health_check()
+    h = scraper.health_check()
     st.json(
         {
-            "scraper_mode": s["scraper_mode"],
-            "llm_model": s["llm_model"],
-            "llm_key_present": bool(s["llm_api_key"]),
-            "ready": h["ready"],
-            "agency_name": s["agency_name"],
-            "sheets": _sheets().sheets_status(),
+            "scraper_mode": s.get("scraper_mode"),
+            "llm_key_present": bool(s.get("llm_api_key")),
+            "ready": h.get("ready"),
+            "agency_name": s.get("agency_name"),
+            "python_note": "If Cloud uses 3.14 and crashes, set Python 3.12 in Streamlit UI settings",
         }
     )
     if st.button("Log out", use_container_width=True):
@@ -620,38 +427,48 @@ def page_settings():
 
 def main():
     inject_css()
-    if not check_password():
+    if not login():
+        return
+
+    # Lazy import agent modules only after login (reduces crash risk at boot)
+    try:
+        from agents import ads_agent as ads
+        from agents import experience_agent as experience
+        from agents import orchestrator
+        from agents import scraper_agent as scraper
+        from agents import scoring
+        from agents import storage
+    except Exception as e:
+        _safe_import_error("Failed loading agent modules", e)
         return
 
     if "nav" not in st.session_state:
         st.session_state["nav"] = "Home"
 
-    # top compact nav — large touch targets, single row wrap
     st.markdown("## 🏪 Lead Agent")
-    nav_items = ["Home", "Leads", "Find leads", "Sheets", "Guide", "Settings"]
+    nav = ["Home", "Leads", "Find leads", "Guide", "Settings"]
     st.session_state["nav"] = st.radio(
         "Menu",
-        nav_items,
-        index=nav_items.index(st.session_state["nav"])
-        if st.session_state["nav"] in nav_items
-        else 0,
+        nav,
+        index=nav.index(st.session_state["nav"]) if st.session_state["nav"] in nav else 0,
         horizontal=True,
         label_visibility="collapsed",
     )
 
     page = st.session_state["nav"]
-    if page == "Home":
-        page_home()
-    elif page == "Leads":
-        page_leads()
-    elif page == "Find leads":
-        page_find()
-    elif page == "Sheets":
-        page_sheets()
-    elif page == "Guide":
-        page_guide()
-    else:
-        page_settings()
+    try:
+        if page == "Home":
+            page_home(storage, scraper)
+        elif page == "Leads":
+            page_leads(storage, experience, ads, scoring)
+        elif page == "Find leads":
+            page_find(orchestrator, scraper)
+        elif page == "Guide":
+            page_guide(scoring, storage)
+        else:
+            page_settings(scraper)
+    except Exception as e:
+        _safe_import_error("Page error", e)
 
 
 if __name__ == "__main__":
