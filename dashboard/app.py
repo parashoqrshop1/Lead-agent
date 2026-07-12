@@ -1,6 +1,6 @@
 """
-Lead Agent — single-file Streamlit app (Cloud-safe).
-No heavy imports at module load. Demo works offline. Real mode uses Gemini REST via httpx.
+Lead Agent — single-file Streamlit app.
+REAL mode never invents phones/IG. Demo samples are clearly labeled [SAMPLE].
 """
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ import sys
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 from uuid import uuid4
 from urllib.parse import quote_plus
 
@@ -26,8 +26,6 @@ DATA = ROOT / "data"
 DATA.mkdir(exist_ok=True)
 LEADS_FILE = DATA / "leads.json"
 
-
-# ---------------- models / storage (stdlib only) ----------------
 
 def utc_now() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
@@ -50,8 +48,8 @@ class Lead:
     website_quality: str = "none"
     is_independent: bool = True
     is_branded_chain: bool = False
-    product_variety: str = "high"
-    carries_multiple_brands: bool = True
+    product_variety: str = "medium"
+    carries_multiple_brands: bool = False
     runs_ads: bool = False
     ad_platforms: str = ""
     ad_topics: str = ""
@@ -62,6 +60,7 @@ class Lead:
     lead_score: int = 0
     score_breakdown: str = ""
     source_url: str = ""
+    is_sample: bool = False  # True only for practice samples
     created_at: str = field(default_factory=utc_now)
     updated_at: str = field(default_factory=utc_now)
 
@@ -75,7 +74,7 @@ class Lead:
         if self.is_independent:
             s += 15
             parts.append("Independent +15")
-        if self.product_variety == "high":
+        if (self.product_variety or "") == "high":
             s += 12
             parts.append("Variety +12")
         if self.carries_multiple_brands:
@@ -85,16 +84,13 @@ class Lead:
             s += 14
             parts.append("No website +14")
             self.has_website = False
-            self.website_quality = "none"
+            self.website_quality = self.website_quality or "none"
         if self.runs_ads:
             s += 12
             parts.append("Paid ads +12")
         if (self.ad_style or "").startswith("product"):
             s += 20
-            parts.append("PRODUCT ads/posts +20")
-        elif self.instagram or self.facebook:
-            s += 12
-            parts.append("Social product/social +12")
+            parts.append("PRODUCT posts/ads +20")
         if self.instagram:
             s += 10
             parts.append("Instagram +10")
@@ -138,13 +134,20 @@ def load_leads() -> List[Lead]:
     except Exception:
         return []
     out: List[Lead] = []
+    known = set(Lead.__dataclass_fields__.keys())
     for item in raw:
         if not isinstance(item, dict):
             continue
-        known = {f.name for f in Lead.__dataclass_fields__.values()}  # type: ignore
         kwargs = {k: v for k, v in item.items() if k in known}
         try:
             lead = Lead(**kwargs)
+            # mark obvious old fakes
+            if (
+                lead.source_url.startswith("demo://")
+                or "shop_" in (lead.instagram or "")
+                or "[SAMPLE]" in (lead.business_name or "")
+            ):
+                lead.is_sample = True
             lead.score()
             out.append(lead)
         except Exception:
@@ -165,78 +168,21 @@ def _norm_phone(p: str) -> str:
 
 
 def _core_name(n: str) -> str:
-    t = re.sub(r"\([^)]*\)", " ", (n or "").lower())
+    t = re.sub(r"\[[^\]]*\]", " ", (n or "").lower())
+    t = re.sub(r"\([^)]*\)", " ", t)
     t = re.split(r"\s*[-–—]\s*", t)[0]
     return re.sub(r"\s+", " ", t).strip()
 
 
-def upsert(leads: List[Lead], new_leads: List[Lead]) -> tuple[List[Lead], int, int]:
-    by: Dict[str, Lead] = {}
-    order: List[str] = []
-
-    def keys(l: Lead) -> List[str]:
-        ks = []
+def upsert(existing: List[Lead], new_leads: List[Lead]) -> List[Lead]:
+    merged: Dict[str, Lead] = {}
+    for l in existing + new_leads:
+        l.score()
         ph = _norm_phone(l.phone or l.whatsapp)
         if ph and len(ph) >= 8:
-            ks.append(f"p:{ph}")
-        name = _core_name(l.business_name)
-        city = (l.city or "").lower().strip()
-        if name and city:
-            ks.append(f"n:{name}|{city}")
-        if l.instagram and "example" not in l.instagram:
-            ks.append(f"ig:{(l.instagram or '').lower()}")
-        if not ks:
-            ks.append(f"id:{l.id}")
-        return ks
-
-    def add_one(l: Lead) -> str:
-        l.score()
-        ks = keys(l)
-        for k in ks:
-            if k in by:
-                old = by[k]
-                # merge
-                d = asdict(old)
-                for kk, vv in asdict(l).items():
-                    if kk in ("id", "created_at"):
-                        continue
-                    if vv in (None, "", False) and d.get(kk) not in (None, ""):
-                        continue
-                    if kk == "lead_score":
-                        d[kk] = max(int(d.get(kk) or 0), int(vv or 0))
-                    elif vv not in (None, ""):
-                        d[kk] = vv
-                m = Lead(**d)
-                m.score()
-                by[k] = m
-                for nk in keys(m):
-                    by[nk] = m
-                return "u"
-        by_id = l.id
-        for k in ks:
-            by[k] = l
-        order.append(by_id)
-        by[f"id:{by_id}"] = l
-        return "a"
-
-    # seed with existing unique
-    for l in leads:
-        add_one(l)
-    # rebuild order from unique objects
-    seen_obj = set()
-    uniq: List[Lead] = []
-    for l in list(by.values()):
-        if id(l) in seen_obj:
-            continue
-        seen_obj.add(id(l))
-        uniq.append(l)
-
-    # simpler merge approach: dict by phone or name|city
-    merged: Dict[str, Lead] = {}
-    for l in leads + new_leads:
-        l.score()
-        ph = _norm_phone(l.phone or l.whatsapp)
-        key = f"p:{ph}" if ph and len(ph) >= 8 else f"n:{_core_name(l.business_name)}|{(l.city or '').lower()}"
+            key = f"p:{ph}"
+        else:
+            key = f"n:{_core_name(l.business_name)}|{(l.city or '').lower()}"
         if key in merged:
             old = merged[key]
             d = asdict(old)
@@ -246,6 +192,9 @@ def upsert(leads: List[Lead], new_leads: List[Lead]) -> tuple[List[Lead], int, i
                 if vv not in (None, "", [], {}):
                     if kk == "lead_score":
                         d[kk] = max(int(d.get(kk) or 0), int(vv or 0))
+                    elif kk == "is_sample":
+                        # real wins over sample
+                        d[kk] = bool(d.get(kk)) and bool(vv)
                     else:
                         d[kk] = vv
             m = Lead(**d)
@@ -255,12 +204,10 @@ def upsert(leads: List[Lead], new_leads: List[Lead]) -> tuple[List[Lead], int, i
         else:
             merged[key] = l
     out = list(merged.values())
-    out.sort(key=lambda x: x.lead_score, reverse=True)
+    out.sort(key=lambda x: (0 if x.is_sample else 1, x.lead_score), reverse=True)
     save_leads(out)
-    return out, len(new_leads), 0
+    return out
 
-
-# ---------------- demo + real generators ----------------
 
 NICHES = {
     "cafe": "Café / coffee",
@@ -271,106 +218,61 @@ NICHES = {
 }
 
 LOCALITIES = {
-    "Akbarpur": [
-        "Main Market",
-        "Sadar Bazar",
-        "Station Road",
-        "Katra",
-        "Purani Bazar",
-        "Bus Stand",
-        "Tanda Road",
-        "Tehsil Road",
-    ],
-    "Lucknow": ["Hazratganj", "Aminabad", "Chowk", "Alambagh", "Gomti Nagar", "Indira Nagar"],
-    "Kanpur": ["Pared", "Birhana Road", "Mall Road", "Govind Nagar", "Kakadeo"],
-    "Jaipur": ["Johari Bazar", "Bapu Bazar", "Raja Park", "Malviya Nagar"],
-    "Ayodhya": ["Civil Lines", "Saket", "Station Road", "Main Market"],
-    "Varanasi": ["Godowlia", "Sigra", "Lanka", "Maidagin"],
+    "Akbarpur": ["Main Market", "Sadar Bazar", "Station Road", "Katra", "Bus Stand", "Tanda Road"],
+    "Indore": ["Rajwada", "Sarafa", "MG Road", "Vijay Nagar", "Palasia", "Bhawarkua"],
+    "Lucknow": ["Hazratganj", "Aminabad", "Chowk", "Alambagh", "Gomti Nagar"],
+    "Kanpur": ["Pared", "Birhana Road", "Mall Road", "Govind Nagar"],
+    "Jaipur": ["Johari Bazar", "Bapu Bazar", "Raja Park"],
+    "Ayodhya": ["Civil Lines", "Station Road", "Main Market"],
+    "Varanasi": ["Godowlia", "Sigra", "Lanka"],
 }
 
 
-def localities(city: str) -> List[str]:
-    areas = LOCALITIES.get(city) or [
-        "Main Market",
-        "Sadar Bazar",
-        "Station Road",
-        "Civil Lines",
-        "Old City",
-        "Bus Stand",
-    ]
+def locality_list(city: str) -> List[str]:
+    areas = LOCALITIES.get(city) or ["Main Market", "Sadar Bazar", "Station Road", "Civil Lines"]
     return [city] + [f"{city} {a}" for a in areas]
 
 
-def make_demo_leads(city: str, niches: List[str], limit: int = 40) -> List[Lead]:
+def make_demo_leads(city: str, niches: List[str], limit: int = 20) -> List[Lead]:
+    """Practice data only — clearly labeled, NO fake phone/IG that looks real."""
     templates = {
-        "cafe": [
-            ("Chai Corner", True, "product_showcase", "menu reels, latte posts", True),
-            ("Roast House Café", True, "offer_promo", "happy hour boosts", False),
-            ("Filter Coffee Point", False, "", "instagram only menu photos", False),
-            ("Bake & Brew Local", True, "product_showcase", "cakes product ads", True),
-        ],
-        "jeweller": [
-            ("Shree Local Jewellers", True, "product_showcase", "bridal sets reels", False),
-            ("Silver Oak Ornaments", True, "product_showcase", "oxidised jewellery ads", False),
-            ("Family Gold House", False, "", "whatsapp catalogue only", False),
-            ("Mangalam Gems", True, "product_showcase", "new collection IG ads", True),
-        ],
-        "clothing": [
-            ("Thread Boutique", True, "product_showcase", "new arrivals lookbook", False),
-            ("Cotton Street Wear", True, "offer_promo", "festival sale ads", False),
-            ("Style Chowk Multi Brand", True, "product_showcase", "ethnic + western reels", False),
-            ("Urban Weave Garments", True, "product_showcase", "product ads weak site", True),
-        ],
-        "shoes": [
-            ("Sole Brothers Footwear", True, "product_showcase", "sneakers product posts", False),
-            ("StepLocal Shoes", False, "", "facebook page products", False),
-            ("Footprint Multi Brand", True, "product_showcase", "IG product ads", False),
-        ],
-        "multi_retail": [
-            ("Mehta Variety Store", True, "product_showcase", "weekly product drops", False),
-            ("Neighbourhood Hub Mart", False, "", "whatsapp order list", False),
-            ("City Needs General", True, "mixed", "fb + ig products", False),
-        ],
+        "cafe": ["Practice Café A", "Practice Coffee House B"],
+        "jeweller": ["Practice Jewellers A", "Practice Gold Shop B"],
+        "clothing": ["Practice Boutique A", "Practice Garments B"],
+        "shoes": ["Practice Footwear A"],
+        "multi_retail": ["Practice Variety Store A"],
     }
-    places = localities(city)
     out: List[Lead] = []
     n = 0
-    for place in places:
-        for niche in niches:
-            for name, runs, style, topics, has_web in templates.get(niche, templates["clothing"]):
-                if n >= limit:
-                    break
-                h = abs(hash(f"{name}|{place}|{niche}")) % 10_000_000
-                lead = Lead(
-                    business_name=f"{name} — {place}",
-                    niche=niche,
-                    city=city,
-                    country="India",
-                    phone=f"+91 98{h % 100000000:08d}"[:14],
-                    whatsapp=f"+91 98{h % 100000000:08d}"[:14],
-                    instagram=f"https://instagram.com/shop_{h}",
-                    facebook=f"https://facebook.com/shop_{h}",
-                    website=f"https://old-site-{h}.blogspot.com" if has_web else "",
-                    has_website=has_web,
-                    website_quality="poor" if has_web else "none",
-                    runs_ads=runs,
-                    ad_style=style or ("product_showcase" if not runs else ""),
-                    ad_platforms="instagram, facebook" if runs else "instagram",
-                    ad_topics=topics,
-                    pain_points=f"Local {NICHES.get(niche, niche)} in {place}; social product showcase; website gap",
-                    notes=f"locality:{place} | social-first independent shop",
-                    source_url="demo://local",
-                    is_independent=True,
-                    product_variety="high",
-                    carries_multiple_brands=True,
-                )
-                lead.score()
-                out.append(lead)
-                n += 1
+    for niche in niches:
+        for name in templates.get(niche, ["Practice Shop"]):
             if n >= limit:
                 break
-        if n >= limit:
-            break
+            lead = Lead(
+                business_name=f"[SAMPLE] {name} ({city})",
+                niche=niche,
+                city=city,
+                country="India",
+                phone="",  # never fake phone
+                whatsapp="",
+                instagram="",  # never fake IG
+                facebook="",
+                website="",
+                has_website=False,
+                runs_ads=False,
+                ad_style="product_showcase",
+                ad_topics="sample only — not a real shop",
+                pain_points="THIS IS FAKE PRACTICE DATA. Use REAL mode with Gemini for real shops.",
+                notes="SAMPLE ONLY — not a real business",
+                source_url="sample://practice",
+                is_sample=True,
+                is_independent=True,
+                product_variety="high",
+                carries_multiple_brands=True,
+            )
+            lead.score()
+            out.append(lead)
+            n += 1
     return out
 
 
@@ -384,18 +286,27 @@ def gemini_json(prompt: str, api_key: str, model: str = "gemini-2.0-flash") -> A
     )
     payload = {
         "contents": [{"role": "user", "parts": [{"text": prompt}]}],
-        "generationConfig": {"temperature": 0.2, "responseMimeType": "application/json"},
+        "generationConfig": {"temperature": 0.1, "responseMimeType": "application/json"},
     }
-    with httpx.Client(timeout=60.0) as client:
+    with httpx.Client(timeout=75.0) as client:
         r = client.post(url, json=payload)
         if r.status_code == 404:
-            url = url.replace(model, "gemini-1.5-flash")
-            r = client.post(url, json=payload)
+            url2 = url.replace(model, "gemini-1.5-flash")
+            r = client.post(url2, json=payload)
+        if r.status_code == 429:
+            raise RuntimeError(
+                "GEMINI QUOTA EXCEEDED (429). Free daily/minute limit hit. "
+                "Wait 1–24 hours OR create a new free API key at https://aistudio.google.com/apikey "
+                "OR enable billing. NO fake leads will be invented."
+            )
         if r.status_code >= 400:
-            raise RuntimeError(f"Gemini {r.status_code}: {r.text[:300]}")
+            raise RuntimeError(f"Gemini API {r.status_code}: {r.text[:350]}")
         data = r.json()
-    text = data["candidates"][0]["content"]["parts"][0]["text"]
-    text = text.strip()
+    try:
+        text = data["candidates"][0]["content"]["parts"][0]["text"]
+    except Exception as e:
+        raise RuntimeError(f"Bad Gemini response: {data}") from e
+    text = (text or "").strip()
     if text.startswith("```"):
         text = text.strip("`")
         if text.startswith("json"):
@@ -409,7 +320,9 @@ def fetch_text(url: str) -> str:
     with httpx.Client(
         timeout=25.0,
         follow_redirects=True,
-        headers={"User-Agent": "Mozilla/5.0 (compatible; LeadAgent/1.0)"},
+        headers={
+            "User-Agent": "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/122 Mobile Safari/537.36"
+        },
     ) as client:
         r = client.get(url)
         r.raise_for_status()
@@ -417,95 +330,183 @@ def fetch_text(url: str) -> str:
     html = re.sub(r"(?is)<(script|style).*?>.*?</\1>", " ", html)
     html = re.sub(r"(?is)<[^>]+>", " ", html)
     html = re.sub(r"\s+", " ", html).strip()
-    return html[:12000]
+    return html[:14000]
 
 
-def real_hunt(city: str, niches: List[str], api_key: str, limit: int = 30) -> tuple[List[Lead], List[str]]:
+def real_hunt(
+    city: str,
+    niches: List[str],
+    api_key: str,
+    model: str,
+    limit: int = 25,
+) -> Tuple[List[Lead], List[str]]:
+    """
+    REAL only. Few Gemini calls to save free quota.
+    Never invents phone/IG — only what model extracts from public search text.
+    """
     errors: List[str] = []
     leads: List[Lead] = []
-    places = localities(city)[:6]
+    places = locality_list(city)[:5]
+
+    # ONE call per niche (not per locality) to reduce quota burn
     for niche in niches:
-        for place in places[:4]:
-            q = f"independent {NICHES.get(niche, niche)} Instagram {place}"
+        place_blob = ", ".join(places)
+        # gather public search snippets for a few queries
+        snippets = []
+        queries = [
+            f"{NICHES.get(niche, niche)} shop {city} contact Instagram",
+            f"best independent {NICHES.get(niche, niche)} in {city} Facebook",
+            f"{NICHES.get(niche, niche)} {city} Main Market Instagram",
+            f"{NICHES.get(niche, niche)} near {city} WhatsApp number",
+        ]
+        for q in queries[:3]:
             url = f"https://www.bing.com/search?q={quote_plus(q)}&count=20"
             try:
-                page = fetch_text(url)
-                prompt = f"""
-Extract INDEPENDENT local {NICHES.get(niche, niche)} shops near {place}, India from this search text.
-Prefer shops with Instagram/Facebook and product posts (ads or organic).
-Exclude chains (Tanishq, Zara, Starbucks, Bata flagship, etc).
-Return JSON: {{"leads":[{{"business_name":"","niche":"{niche}","city":"{city}","phone":"","whatsapp":"","email":"","website":"","instagram":"","facebook":"","has_website":false,"runs_ads":false,"ad_style":"product_showcase|offer_promo|","ad_topics":"","pain_points":"","notes":""}}]}}
-Max 8 shops. Search text:
-{page}
-"""
-                raw = gemini_json(prompt, api_key)
-                items = raw.get("leads") if isinstance(raw, dict) else raw
-                if not isinstance(items, list):
-                    continue
-                for item in items:
-                    if not isinstance(item, dict) or not item.get("business_name"):
-                        continue
-                    lead = Lead(
-                        business_name=str(item.get("business_name")),
-                        niche=str(item.get("niche") or niche),
-                        city=str(item.get("city") or city),
-                        country="India",
-                        phone=str(item.get("phone") or ""),
-                        whatsapp=str(item.get("whatsapp") or ""),
-                        email=str(item.get("email") or ""),
-                        website=str(item.get("website") or ""),
-                        instagram=str(item.get("instagram") or ""),
-                        facebook=str(item.get("facebook") or ""),
-                        has_website=bool(item.get("has_website") or item.get("website")),
-                        runs_ads=bool(item.get("runs_ads")),
-                        ad_style=str(item.get("ad_style") or ""),
-                        ad_topics=str(item.get("ad_topics") or ""),
-                        pain_points=str(item.get("pain_points") or ""),
-                        notes=str(item.get("notes") or f"locality:{place}"),
-                        source_url=f"bing:{q}",
-                        is_independent=True,
-                        product_variety="high",
-                        carries_multiple_brands=True,
-                    )
-                    if not lead.website:
-                        lead.has_website = False
-                        lead.website_quality = "none"
-                    lead.score()
-                    leads.append(lead)
+                snippets.append(f"QUERY: {q}\n{fetch_text(url)[:3500]}")
             except Exception as e:
-                errors.append(f"{place}/{niche}: {e}")
-            if len(leads) >= limit:
+                errors.append(f"search fetch failed: {q}: {e}")
+
+        if not snippets:
+            errors.append(f"{niche}: no search pages fetched")
+            continue
+
+        prompt = f"""
+You extract REAL independent local businesses from public search result text.
+
+City/town: {city}, India
+Niche: {NICHES.get(niche, niche)}
+Also consider nearby markets: {place_blob}
+
+RULES:
+1) ONLY include businesses that appear in the search text (do not invent names).
+2) Do NOT invent phone numbers or Instagram handles.
+3) If phone/IG/website is not clearly present, leave it as empty string "".
+4) Exclude national chains (Tanishq, Kalyan, Zara, H&M, Starbucks, Bata mono-store, Reliance Trends, etc.).
+5) Prefer shops that seem local/independent and have social or product mentions.
+6) Return up to 10 shops.
+
+Return JSON only:
+{{
+  "leads": [
+    {{
+      "business_name": "exact name from text",
+      "niche": "{niche}",
+      "city": "{city}",
+      "address": "",
+      "phone": "",
+      "whatsapp": "",
+      "email": "",
+      "website": "",
+      "instagram": "",
+      "facebook": "",
+      "has_website": false,
+      "runs_ads": false,
+      "ad_style": "",
+      "ad_topics": "",
+      "pain_points": "",
+      "notes": "short evidence quote from search text"
+    }}
+  ]
+}}
+
+SEARCH TEXT:
+{chr(10).join(snippets)[:11000]}
+"""
+        try:
+            raw = gemini_json(prompt, api_key, model=model)
+        except Exception as e:
+            errors.append(f"{niche}: {e}")
+            # stop further niches if quota exceeded
+            if "429" in str(e) or "QUOTA" in str(e).upper():
                 break
+            continue
+
+        items = raw.get("leads") if isinstance(raw, dict) else raw
+        if not isinstance(items, list):
+            errors.append(f"{niche}: model returned no leads list")
+            continue
+
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            name = str(item.get("business_name") or "").strip()
+            if not name or name.lower() in ("n/a", "none", "unknown"):
+                continue
+            # reject obviously invented pattern handles
+            ig = str(item.get("instagram") or "").strip()
+            fb = str(item.get("facebook") or "").strip()
+            phone = str(item.get("phone") or item.get("whatsapp") or "").strip()
+            if re.fullmatch(r"https?://instagram\.com/shop_\d+", ig or ""):
+                ig = ""
+            if re.fullmatch(r"https?://facebook\.com/shop_\d+", fb or ""):
+                fb = ""
+
+            lead = Lead(
+                business_name=name,
+                niche=str(item.get("niche") or niche),
+                city=str(item.get("city") or city),
+                country="India",
+                phone=phone,
+                whatsapp=str(item.get("whatsapp") or phone or ""),
+                email=str(item.get("email") or ""),
+                website=str(item.get("website") or ""),
+                instagram=ig,
+                facebook=fb,
+                has_website=bool(item.get("website")),
+                runs_ads=bool(item.get("runs_ads")),
+                ad_style=str(item.get("ad_style") or ""),
+                ad_topics=str(item.get("ad_topics") or ""),
+                pain_points=str(item.get("pain_points") or ""),
+                notes=str(item.get("notes") or item.get("address") or ""),
+                source_url=f"real:{city}:{niche}",
+                is_sample=False,
+                is_independent=True,
+                product_variety="medium",
+                carries_multiple_brands=False,
+            )
+            if not lead.website:
+                lead.has_website = False
+                lead.website_quality = "none"
+            # if social product style unknown but social exists, keep empty (honest)
+            lead.score()
+            leads.append(lead)
+
         if len(leads) >= limit:
             break
-    return leads[:limit], errors
+
+    # de-dupe within batch
+    uniq: Dict[str, Lead] = {}
+    for l in leads:
+        k = f"{_core_name(l.business_name)}|{(l.city or '').lower()}"
+        if k not in uniq:
+            uniq[k] = l
+    return list(uniq.values())[:limit], errors
 
 
 def outreach(lead: Lead, agency: str, wa: str) -> str:
+    if lead.is_sample:
+        return "This is SAMPLE data — do not message. Run REAL hunt with Gemini quota available."
     return (
-        f"Hi! I work with independent local shops (not big chains).\n\n"
-        f"I found *{lead.business_name}* in {lead.city or 'your area'}. "
-        f"You already showcase products on social"
-        f"{' and run ads' if lead.runs_ads else ''}"
-        f"{' but your website is weak/missing' if not lead.website else ''}.\n\n"
-        f"We build simple websites + product showcase pages + WhatsApp enquiry for shops like yours.\n\n"
-        f"Want a free 5-min idea for {lead.business_name}? No obligation.\n\n"
+        f"Hi! I help independent local shops (not chains) with websites & product showcase pages.\n\n"
+        f"I came across *{lead.business_name}* in {lead.city or 'your area'}. "
+        f"{'You already use social to show products' if (lead.instagram or lead.facebook) else 'Your shop looks like a strong local brand'}"
+        f"{' and your website is missing/weak' if not lead.website else ''}.\n\n"
+        f"Would you like a free 5-min idea to get more enquiries online?\n\n"
         f"— {agency}\n{wa}"
     )
 
 
-# ---------------- UI ----------------
-
-def css():
+def css() -> None:
     st.markdown(
         """
         <style>
-        .block-container{max-width:720px;padding-top:1rem}
+        .block-container{max-width:740px;padding-top:1rem}
         .card{border:1px solid #334155;border-radius:14px;padding:12px;margin:0 0 10px;background:#0f172a}
         .name{font-weight:700;color:#f8fafc}
         .meta{color:#94a3b8;font-size:.9rem}
         .pill{display:inline-block;padding:2px 8px;border-radius:999px;font-size:.75rem;font-weight:700;margin-right:6px}
-        .hi{background:#14532d;color:#86efac}.mid{background:#713f12;color:#fde68a}.lo{background:#7f1d1d;color:#fecaca}
+        .hi{background:#14532d;color:#86efac}.mid{background:#713f12;color:#fde68a}
+        .lo{background:#7f1d1d;color:#fecaca}.sam{background:#4c1d95;color:#ddd6fe}
         </style>
         """,
         unsafe_allow_html=True,
@@ -520,10 +521,10 @@ def main() -> None:
     agency = _secret("AGENCY_NAME", "Your Web Agency")
     wa = _secret("AGENCY_WHATSAPP", "")
     model = _secret("LLM_MODEL", "gemini-2.0-flash")
+    real_ready = mode in ("light", "real", "gemini_web") and bool(gemini)
 
     if not st.session_state.get("auth"):
         st.title("🏪 Lead Agent")
-        st.caption("Independent local shops · social + product showcase leads")
         with st.form("login"):
             p = st.text_input("Password", type="password")
             if st.form_submit_button("Enter", type="primary", use_container_width=True):
@@ -531,72 +532,76 @@ def main() -> None:
                     st.session_state["auth"] = True
                     st.rerun()
                 st.error("Wrong password")
-        st.caption("Default if unset: demo123")
         return
 
     st.title("🏪 Lead Agent")
-    real_ready = mode in ("light", "real", "gemini_web") and bool(gemini)
     if real_ready:
-        st.success(f"Mode: **REAL/light** · Gemini key present")
+        st.success("Mode: **REAL** (Gemini key loaded). No fake numbers will be invented.")
     else:
         st.error(
-            f"Mode: **{mode or 'demo'}** (test/sample). "
-            "For REAL leads set Secrets: SCRAPER_MODE=\"light\" + GEMINI_API_KEY then Reboot."
+            "Mode: **NOT REAL yet**. Set Secrets then Reboot:\n\n"
+            '`SCRAPER_MODE = "light"`\n'
+            '`GEMINI_API_KEY = "your_key"`'
         )
 
-    nav = st.radio("Menu", ["Home", "Find leads", "Leads", "Settings"], horizontal=True, label_visibility="collapsed")
+    # auto-clean old fakes once
+    if not st.session_state.get("cleaned_fakes"):
+        cur = load_leads()
+        real_only = [
+            l
+            for l in cur
+            if not l.is_sample
+            and not (l.source_url or "").startswith("demo://")
+            and not (l.source_url or "").startswith("sample://")
+            and "shop_" not in (l.instagram or "")
+            and "[SAMPLE]" not in (l.business_name or "")
+        ]
+        if len(real_only) != len(cur):
+            save_leads(real_only)
+            st.warning(f"Removed {len(cur) - len(real_only)} old fake/sample leads from storage.")
+        st.session_state["cleaned_fakes"] = True
+
+    nav = st.radio(
+        "Menu",
+        ["Home", "Find REAL leads", "Leads", "Settings"],
+        horizontal=True,
+        label_visibility="collapsed",
+    )
     leads = [l for l in load_leads() if not l.is_branded_chain]
+    real_leads = [l for l in leads if not l.is_sample]
+    sample_leads = [l for l in leads if l.is_sample]
 
     if nav == "Home":
         c1, c2, c3 = st.columns(3)
-        c1.metric("Leads", len(leads))
-        c2.metric("Score ≥70", sum(1 for l in leads if l.lead_score >= 70))
-        c3.metric("With social", sum(1 for l in leads if l.instagram or l.facebook))
+        c1.metric("REAL leads", len(real_leads))
+        c2.metric("Samples", len(sample_leads))
+        c3.metric("With phone", sum(1 for l in real_leads if l.phone or l.whatsapp))
 
-        if st.button("⚡ Generate leads NOW", type="primary", use_container_width=True):
-            with st.spinner("Generating…"):
-                errs: List[str] = []
-                new: List[Lead] = []
-                if real_ready:
-                    try:
-                        new, errs = real_hunt(
-                            "Akbarpur",
-                            ["jeweller", "clothing", "cafe", "shoes", "multi_retail"],
-                            gemini,
-                            limit=40,
-                        )
-                    except Exception as e:
-                        errs.append(str(e))
-                    if not new:
-                        st.warning("Real hunt returned 0 — loading local samples so you're not stuck.")
-                        new = make_demo_leads("Akbarpur", ["jeweller", "clothing", "cafe", "shoes"], 50)
-                        errs.append("Fell back to samples because real hunt empty/failed.")
-                else:
-                    new = make_demo_leads("Akbarpur", ["jeweller", "clothing", "cafe", "shoes", "multi_retail"], 50)
-                all_leads, _, _ = upsert(load_leads(), new)
-                st.success(f"Saved {len(all_leads)} total leads (added batch {len(new)})")
-                for e in errs[:5]:
-                    st.warning(e)
-                st.session_state["show_table"] = True
-                st.rerun()
+        if st.button("🗑 Delete ALL stored leads (including fakes)", use_container_width=True):
+            save_leads([])
+            st.session_state["cleaned_fakes"] = True
+            st.success("Cleared.")
+            st.rerun()
 
-        if leads:
-            st.markdown("#### Top leads")
-            for l in sorted(leads, key=lambda x: x.lead_score, reverse=True)[:8]:
-                pill = "hi" if l.lead_score >= 70 else "mid" if l.lead_score >= 45 else "lo"
-                st.markdown(
-                    f'<div class="card"><div class="name">{l.business_name}</div>'
-                    f'<div class="meta">{l.niche} · {l.city} · {l.phone or "no phone"}</div>'
-                    f'<span class="pill {pill}">{l.lead_score}/100</span>'
-                    f'<div class="meta">IG: {l.instagram or "—"}</div></div>',
-                    unsafe_allow_html=True,
-                )
+        st.markdown("#### Top REAL leads")
+        if not real_leads:
+            st.info("No REAL leads yet. Open **Find REAL leads**.")
+        for l in sorted(real_leads, key=lambda x: x.lead_score, reverse=True)[:10]:
+            st.markdown(
+                f'<div class="card"><div class="name">{l.business_name}</div>'
+                f'<div class="meta">{l.niche} · {l.city} · 📞 {l.phone or "not found publicly"}</div>'
+                f'<div class="meta">IG: {l.instagram or "—"} · FB: {l.facebook or "—"}</div>'
+                f'<span class="pill hi">{l.lead_score}/100</span></div>',
+                unsafe_allow_html=True,
+            )
 
-    elif nav == "Find leads":
+    elif nav == "Find REAL leads":
+        st.markdown("### Hunt real shops")
         city = st.selectbox(
             "City / town",
             [
                 "Akbarpur",
+                "Indore",
                 "Ayodhya",
                 "Lucknow",
                 "Kanpur",
@@ -608,151 +613,172 @@ def main() -> None:
             ],
         )
         if city == "Other…":
-            city = st.text_input("Type city", value="Akbarpur")
+            city = st.text_input("Type city", "Akbarpur")
         niches = st.multiselect(
             "Niches",
             list(NICHES.keys()),
-            default=["jeweller", "clothing", "cafe", "shoes", "multi_retail"],
+            default=["jeweller", "clothing", "cafe"],
             format_func=lambda x: NICHES[x],
         )
-        limit = st.slider("Target leads", 20, 100, 50)
-        if st.button("📍 Hunt local niche leads", type="primary", use_container_width=True):
-            with st.spinner(f"Hunting in {city}…"):
-                errs: List[str] = []
-                new: List[Lead] = []
-                if real_ready:
-                    try:
-                        new, errs = real_hunt(city, niches or ["clothing"], gemini, limit=limit)
-                    except Exception as e:
-                        errs = [str(e)]
-                    tag = "REAL"
-                    if not new:
-                        st.warning("Real hunt empty/failed — using samples so you still get output.")
-                        new = make_demo_leads(city, niches or ["clothing"], limit)
-                        tag = "FALLBACK SAMPLES"
-                else:
-                    new = make_demo_leads(city, niches or ["clothing"], limit)
-                    tag = "DEMO"
-                all_leads, _, _ = upsert(load_leads(), new)
-                st.success(f"[{tag}] batch {len(new)} · total stored {len(all_leads)}")
-                for e in errs[:8]:
-                    st.warning(e)
-                # immediate table
-                rows = [
-                    {
-                        "score": l.lead_score,
-                        "name": l.business_name,
-                        "city": l.city,
-                        "phone": l.phone,
-                        "instagram": l.instagram,
-                        "ads": l.ad_style,
-                        "niche": l.niche,
-                    }
-                    for l in sorted(all_leads, key=lambda x: x.lead_score, reverse=True)[:60]
-                ]
-                st.dataframe(rows, use_container_width=True)
-                st.download_button(
-                    "⬇️ Download CSV",
-                    data=("score,name,city,phone,instagram,facebook,website,niche,ads,breakdown\n"
-                          + "\n".join(
-                              f"\"{l.lead_score}\",\"{l.business_name}\",\"{l.city}\",\"{l.phone}\","
-                              f"\"{l.instagram}\",\"{l.facebook}\",\"{l.website}\",\"{l.niche}\","
-                              f"\"{l.ad_style}\",\"{l.score_breakdown}\""
-                              for l in all_leads
-                          )),
-                    file_name="leads.csv",
-                    mime="text/csv",
-                    use_container_width=True,
-                )
+        limit = st.slider("Max leads to extract", 10, 40, 20)
+        only_real = st.toggle("REAL only (never add samples)", value=True)
 
-        st.markdown("### Go REAL")
-        st.code(
-            'SCRAPER_MODE = "light"\n'
-            'GEMINI_API_KEY = "your_key_from_aistudio.google.com"\n'
-            'DASHBOARD_PASSWORD = "your-password"\n'
-            'AGENCY_NAME = "Your Web Agency"',
-            language="toml",
+        if st.button("📍 Hunt REAL local leads", type="primary", use_container_width=True):
+            if not real_ready:
+                st.error(
+                    "REAL mode not configured.\n\n"
+                    "Streamlit Secrets must be:\n"
+                    'SCRAPER_MODE = "light"\n'
+                    'GEMINI_API_KEY = "your_key"\n'
+                    "Then Reboot the app."
+                )
+            elif not niches:
+                st.error("Pick at least one niche")
+            else:
+                with st.spinner(
+                    "Calling public search + Gemini (uses free quota — few calls)…"
+                ):
+                    try:
+                        new, errs = real_hunt(
+                            city, niches, gemini, model=model, limit=limit
+                        )
+                    except Exception as e:
+                        new, errs = [], [str(e)]
+
+                    if errs:
+                        for e in errs[:10]:
+                            st.error(e)
+
+                    if not new:
+                        st.error(
+                            "0 REAL leads found.\n\n"
+                            "Common reasons:\n"
+                            "1) Gemini free quota exceeded (429) — wait or new API key\n"
+                            "2) Invalid GEMINI_API_KEY\n"
+                            "3) Search pages blocked / empty\n"
+                            "4) Model found no independent shops in text\n\n"
+                            "NO fake shops were added."
+                        )
+                        if not only_real:
+                            st.warning("Samples disabled by default. Turn off REAL only to load labeled samples.")
+                    else:
+                        all_leads = upsert(load_leads(), new)
+                        st.success(
+                            f"REAL batch: {len(new)} · total stored: {len(all_leads)} "
+                            f"(real: {sum(1 for l in all_leads if not l.is_sample)})"
+                        )
+                        rows = [
+                            {
+                                "score": l.lead_score,
+                                "name": l.business_name,
+                                "city": l.city,
+                                "phone": l.phone or "(not public)",
+                                "instagram": l.instagram or "(not public)",
+                                "facebook": l.facebook or "(not public)",
+                                "website": l.website or "(none)",
+                                "notes": (l.notes or "")[:80],
+                            }
+                            for l in sorted(new, key=lambda x: x.lead_score, reverse=True)
+                        ]
+                        st.dataframe(rows, use_container_width=True)
+                        st.download_button(
+                            "⬇️ Download REAL CSV",
+                            data=(
+                                "score,name,city,phone,instagram,facebook,website,niche,notes\n"
+                                + "\n".join(
+                                    f"\"{l.lead_score}\",\"{l.business_name}\",\"{l.city}\","
+                                    f"\"{l.phone}\",\"{l.instagram}\",\"{l.facebook}\","
+                                    f"\"{l.website}\",\"{l.niche}\",\"{(l.notes or '').replace('\"','')}\""
+                                    for l in all_leads
+                                    if not l.is_sample
+                                )
+                            ),
+                            file_name=f"real_leads_{city}.csv",
+                            mime="text/csv",
+                            use_container_width=True,
+                        )
+
+        with st.expander("Optional: load clearly labeled SAMPLE data (for UI practice only)"):
+            if st.button("Load [SAMPLE] practice rows"):
+                samples = make_demo_leads(city if city != "Other…" else "Akbarpur", niches or ["clothing"], 10)
+                upsert(load_leads(), samples)
+                st.warning("Added SAMPLE rows only — names start with [SAMPLE], no fake phones.")
+                st.rerun()
+
+        st.markdown("### Fix Gemini quota (your screenshot error)")
+        st.markdown(
+            """
+Your log showed **`Gemini 429 — exceeded current quota`**.
+
+That means free Gemini limit is finished for now. When that happens:
+- ❌ old app invented fake shops (wrong — now fixed)
+- ✅ new app stops and tells you honestly
+
+**What to do:**
+1. Open https://aistudio.google.com/apikey  
+2. Create a **new** API key (or wait until quota resets — often next day)  
+3. Paste into Streamlit Secrets as `GEMINI_API_KEY`  
+4. Reboot app  
+5. Hunt again with fewer niches first (1 niche, limit 15)
+"""
         )
 
     elif nav == "Leads":
-        if not leads:
-            st.warning("No leads yet. Go to Find leads / Generate now.")
+        show = st.radio("Show", ["REAL only", "All", "Samples only"], horizontal=True)
+        if show == "REAL only":
+            view = real_leads
+        elif show == "Samples only":
+            view = sample_leads
         else:
-            q = st.text_input("Search")
-            min_score = st.select_slider("Min score", [0, 40, 60, 70, 80, 90], value=0)
-            only_social = st.toggle("Only Instagram/Facebook", False)
-            filtered = []
-            for l in leads:
-                if l.lead_score < min_score:
-                    continue
-                if only_social and not (l.instagram or l.facebook):
-                    continue
-                blob = f"{l.business_name} {l.city} {l.phone} {l.niche}".lower()
-                if q and q.lower() not in blob:
-                    continue
-                filtered.append(l)
-            filtered.sort(key=lambda x: x.lead_score, reverse=True)
-            labels = [f"{l.lead_score} · {l.business_name}" for l in filtered]
-            if not labels:
-                st.info("No matches")
-            else:
-                choice = st.selectbox("Pick lead", labels)
-                lead = filtered[labels.index(choice)]
-                st.markdown(
-                    f"**{lead.business_name}**  \n"
-                    f"Score: **{lead.lead_score}**  \n"
-                    f"📞 {lead.phone or lead.whatsapp or '—'}  \n"
-                    f"📷 {lead.instagram or '—'}  \n"
-                    f"👤 {lead.facebook or '—'}  \n"
-                    f"🌐 {lead.website or 'no website'}  \n"
-                    f"📣 {lead.ad_style or '—'} · {lead.ad_topics or '—'}  \n"
-                    f"Pain: {lead.pain_points or '—'}  \n"
-                    f"`{lead.score_breakdown}`"
-                )
-                st.text_area("WhatsApp pitch", outreach(lead, agency, wa), height=180)
-                status = st.selectbox(
-                    "Status",
-                    ["new", "qualified", "contacted", "meeting", "won", "lost"],
-                    index=0,
-                )
-                if st.button("Save status", use_container_width=True):
-                    all_leads = load_leads()
-                    for i, l in enumerate(all_leads):
-                        if l.id == lead.id:
-                            all_leads[i].status = status
-                            all_leads[i].updated_at = utc_now()
-                    save_leads(all_leads)
-                    st.success("Saved")
-                if st.button("Delete lead", use_container_width=True):
-                    save_leads([l for l in load_leads() if l.id != lead.id])
-                    st.rerun()
+            view = leads
+        if not view:
+            st.warning("No leads in this filter.")
+        else:
+            labels = [
+                f"{'[SAMPLE] ' if l.is_sample else ''}{l.lead_score} · {l.business_name}"
+                for l in sorted(view, key=lambda x: x.lead_score, reverse=True)
+            ]
+            choice = st.selectbox("Pick", labels)
+            lead = sorted(view, key=lambda x: x.lead_score, reverse=True)[labels.index(choice)]
+            if lead.is_sample:
+                st.error("SAMPLE DATA — not a real shop. Do not call/message.")
+            st.write(f"**{lead.business_name}**")
+            st.write(f"Score: {lead.lead_score}")
+            st.write(f"📞 Phone: {lead.phone or lead.whatsapp or '(not found publicly)'}")
+            st.write(f"📷 Instagram: {lead.instagram or '(not found publicly)'}")
+            st.write(f"👤 Facebook: {lead.facebook or '(not found publicly)'}")
+            st.write(f"🌐 Website: {lead.website or '(none)'}")
+            st.write(f"Notes: {lead.notes or '—'}")
+            st.caption(lead.score_breakdown)
+            st.text_area("WhatsApp draft", outreach(lead, agency, wa), height=160)
+            if st.button("Delete this lead", use_container_width=True):
+                save_leads([l for l in load_leads() if l.id != lead.id])
+                st.rerun()
 
-        if st.button("Clear ALL leads", use_container_width=True):
+        if st.button("🗑 Clear ALL leads", use_container_width=True):
             save_leads([])
             st.rerun()
 
     else:
-        st.write("### Settings")
+        st.write("### Settings / status")
         st.json(
             {
                 "mode": mode,
-                "gemini_key": bool(gemini),
+                "gemini_key_present": bool(gemini),
                 "real_ready": real_ready,
-                "agency": agency,
-                "leads_file": str(LEADS_FILE),
-                "stored_leads": len(leads),
+                "model": model,
+                "real_leads": len(real_leads),
+                "sample_leads": len(sample_leads),
             }
         )
-        st.markdown(
-            """
-**REAL secrets**
-```toml
-SCRAPER_MODE = "light"
-GEMINI_API_KEY = "..."
-LLM_MODEL = "gemini-2.0-flash"
-DASHBOARD_PASSWORD = "..."
-```
-"""
+        st.code(
+            'SCRAPER_MODE = "light"\n'
+            'GEMINI_API_KEY = "YOUR_KEY"\n'
+            'LLM_MODEL = "gemini-2.0-flash"\n'
+            'DASHBOARD_PASSWORD = "your-password"\n'
+            'AGENCY_NAME = "Your Web Agency"\n'
+            'AGENCY_WHATSAPP = "+91XXXXXXXXXX"',
+            language="toml",
         )
         if st.button("Log out", use_container_width=True):
             st.session_state.clear()
