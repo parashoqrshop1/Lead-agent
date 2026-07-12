@@ -47,7 +47,7 @@ def load_leads() -> List[ShopLead]:
     leads: List[ShopLead] = []
     for item in raw:
         try:
-            leads.append(ShopLead.model_validate(item))
+            leads.append(ShopLead.from_any(item))
         except Exception:
             continue
     return leads

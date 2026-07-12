@@ -2,14 +2,95 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 from uuid import uuid4
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 def utc_now() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+
+
+def _is_missing(v: Any) -> bool:
+    if v is None:
+        return True
+    try:
+        if v != v:  # NaN
+            return True
+    except Exception:
+        pass
+    try:
+        import math
+
+        if isinstance(v, float) and math.isnan(v):
+            return True
+    except Exception:
+        pass
+    try:
+        import pandas as pd
+
+        if pd.isna(v):
+            return True
+    except Exception:
+        pass
+    return False
+
+
+def clean_lead_dict(raw: Dict[str, Any]) -> Dict[str, Any]:
+    """Normalize pandas/numpy row dicts so Pydantic never sees NaN."""
+    out: Dict[str, Any] = {}
+    bool_fields = {
+        "has_website",
+        "is_independent",
+        "is_branded_chain",
+        "carries_multiple_brands",
+        "runs_ads",
+        "has_instagram_ads",
+        "has_facebook_ads",
+        "has_google_ads",
+    }
+    int_fields = {"lead_score"}
+
+    for k, v in (raw or {}).items():
+        if _is_missing(v):
+            out[k] = None
+            continue
+        try:
+            import numpy as np
+
+            if isinstance(v, np.generic):
+                v = v.item()
+        except Exception:
+            pass
+
+        if k in bool_fields:
+            if isinstance(v, str):
+                out[k] = v.strip().lower() in ("true", "1", "yes", "y")
+            else:
+                out[k] = bool(v)
+        elif k in int_fields:
+            try:
+                out[k] = int(float(v))
+            except Exception:
+                out[k] = 0
+        elif isinstance(v, str):
+            out[k] = v
+        else:
+            if isinstance(v, (int, float, bool, list, dict)):
+                out[k] = v
+            else:
+                out[k] = str(v)
+
+    if not out.get("business_name"):
+        out["business_name"] = out.get("name") or "Unknown"
+    if not out.get("id"):
+        out["id"] = str(uuid4())[:8]
+    if out.get("status") in (None, ""):
+        out["status"] = "new"
+    if out.get("lead_score") is None:
+        out["lead_score"] = 0
+    return out
 
 
 class ShopLead(BaseModel):
@@ -28,26 +109,23 @@ class ShopLead(BaseModel):
     whatsapp: Optional[str] = None
     google_maps_url: Optional[str] = None
     has_website: Optional[bool] = None
-    website_quality: Optional[str] = None  # none | poor | average | good
+    website_quality: Optional[str] = None
     is_independent: Optional[bool] = True
     is_branded_chain: Optional[bool] = False
-    product_variety: Optional[str] = None  # low | medium | high
+    product_variety: Optional[str] = None
     carries_multiple_brands: Optional[bool] = None
     independence_signals: Optional[str] = None
-    # ---- Advertising intelligence ----
     runs_ads: Optional[bool] = None
-    ad_platforms: Optional[str] = None  # comma list: instagram, facebook, google, youtube
-    ad_topics: Optional[str] = None  # what they advertise about
-    ad_style: Optional[str] = None  # product_showcase | offer_promo | brand_awareness | mixed
+    ad_platforms: Optional[str] = None
+    ad_topics: Optional[str] = None
+    ad_style: Optional[str] = None
     has_instagram_ads: Optional[bool] = None
     has_facebook_ads: Optional[bool] = None
     has_google_ads: Optional[bool] = None
     ads_evidence: Optional[str] = None
-    # ---- Scoring (transparent) ----
     lead_score: int = Field(default=0, ge=0, le=100)
-    score_breakdown: Optional[str] = None  # short: "82 | Independent +15; PRODUCT ads +20; ..."
-    score_factors: Optional[str] = None  # long detail for Sheets
-    # ---- Agency ----
+    score_breakdown: Optional[str] = None
+    score_factors: Optional[str] = None
     pain_points: Optional[str] = None
     experience_fit: Optional[str] = None
     recommended_package: Optional[str] = None
@@ -57,6 +135,115 @@ class ShopLead(BaseModel):
     owner_name: Optional[str] = None
     created_at: str = Field(default_factory=utc_now)
     updated_at: str = Field(default_factory=utc_now)
+
+    @field_validator("lead_score", mode="before")
+    @classmethod
+    def _score_int(cls, v: Any) -> int:
+        if _is_missing(v):
+            return 0
+        try:
+            return max(0, min(100, int(float(v))))
+        except Exception:
+            return 0
+
+    @field_validator(
+        "has_website",
+        "is_independent",
+        "is_branded_chain",
+        "carries_multiple_brands",
+        "runs_ads",
+        "has_instagram_ads",
+        "has_facebook_ads",
+        "has_google_ads",
+        mode="before",
+    )
+    @classmethod
+    def _opt_bool(cls, v: Any) -> Any:
+        if _is_missing(v):
+            return None
+        if isinstance(v, str):
+            s = v.strip().lower()
+            if s in ("true", "1", "yes", "y"):
+                return True
+            if s in ("false", "0", "no", "n"):
+                return False
+            return None
+        return bool(v)
+
+    @field_validator(
+        "business_name",
+        "niche",
+        "category",
+        "city",
+        "country",
+        "address",
+        "phone",
+        "email",
+        "website",
+        "instagram",
+        "facebook",
+        "whatsapp",
+        "google_maps_url",
+        "website_quality",
+        "product_variety",
+        "independence_signals",
+        "ad_platforms",
+        "ad_topics",
+        "ad_style",
+        "ads_evidence",
+        "score_breakdown",
+        "score_factors",
+        "pain_points",
+        "experience_fit",
+        "recommended_package",
+        "source_url",
+        "status",
+        "notes",
+        "owner_name",
+        "created_at",
+        "updated_at",
+        "id",
+        mode="before",
+    )
+    @classmethod
+    def _opt_str(cls, v: Any) -> Any:
+        if _is_missing(v):
+            return None
+        if not isinstance(v, str):
+            return str(v)
+        return v
+
+    @classmethod
+    def from_any(cls, raw: Any) -> "ShopLead":
+        if isinstance(raw, cls):
+            return raw
+        if hasattr(raw, "to_dict"):
+            raw = raw.to_dict()
+        if not isinstance(raw, dict):
+            raw = {"business_name": str(raw)}
+        data = clean_lead_dict(raw)
+        if data.get("business_name") is None:
+            data["business_name"] = "Unknown"
+        if data.get("status") is None:
+            data["status"] = "new"
+        if data.get("id") is None:
+            data["id"] = str(uuid4())[:8]
+        if data.get("created_at") is None:
+            data["created_at"] = utc_now()
+        if data.get("updated_at") is None:
+            data["updated_at"] = utc_now()
+        try:
+            return cls.model_validate(data)
+        except Exception:
+            return cls(
+                id=str(data.get("id") or str(uuid4())[:8]),
+                business_name=str(data.get("business_name") or "Unknown"),
+                city=data.get("city"),
+                niche=data.get("niche"),
+                status=str(data.get("status") or "new"),
+                lead_score=int(data.get("lead_score") or 0),
+                notes=str(data.get("notes") or "") or None,
+            )
 
     def recompute_score(self) -> int:
         from agents.scoring import apply_score
@@ -91,8 +278,6 @@ class AgentTask(BaseModel):
     updated_at: str = Field(default_factory=utc_now)
     lead_ids: List[str] = Field(default_factory=list)
 
-
-# ---------- Prompts ----------
 
 EXTRACT_INDEPENDENT_SHOPS_PROMPT = """
 You extract INDEPENDENT local shops for a digital experience / website agency.

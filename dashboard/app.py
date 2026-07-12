@@ -314,8 +314,16 @@ def page_leads():
     ids = view["id"].tolist()
     if not ids:
         return
-    selected = st.selectbox("Lead id", ids)
-    lead = ShopLead.model_validate(view[view["id"] == selected].iloc[0].to_dict())
+    selected = st.selectbox("Lead id", [str(x) for x in ids])
+    # Prefer loading from JSON storage (clean types) over pandas row
+    lead = None
+    for item in load_leads():
+        if str(item.id) == str(selected):
+            lead = item
+            break
+    if lead is None:
+        row = view[view["id"].astype(str) == str(selected)].iloc[0]
+        lead = ShopLead.from_any(row)
 
     a, b = st.columns(2)
     with a:
