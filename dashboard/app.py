@@ -60,21 +60,81 @@ st.set_page_config(
 )
 
 
+def _read_dashboard_password() -> str:
+    """Read password fresh every time (do not use cached settings for auth)."""
+    # 1) Streamlit secrets
+    try:
+        if hasattr(st, "secrets"):
+            # st.secrets.get works on Cloud; avoid fragile `key in st.secrets`
+            val = st.secrets.get("DASHBOARD_PASSWORD", None)
+            if val is not None and str(val).strip() != "":
+                return str(val).strip()
+    except Exception:
+        pass
+    # 2) env
+    import os
+
+    env = (os.getenv("DASHBOARD_PASSWORD") or "").strip()
+    if env:
+        return env
+    # 3) default
+    return "change-me-now"
+
+
 def check_password() -> bool:
-    settings = get_settings()
-    expected = settings.get("dashboard_password") or "change-me-now"
     if st.session_state.get("authenticated"):
         return True
+
+    expected = _read_dashboard_password()
+
     st.title("🔐 Lead Agent Login")
     st.caption("Independent shops · Ads-aware scoring · Google Sheets CRM")
-    pwd = st.text_input("Dashboard password", type="password")
-    if st.button("Enter", type="primary", use_container_width=True):
-        if pwd == expected:
+
+    # st.form is more reliable on mobile (keyboard "Go" submits)
+    with st.form("login_form", clear_on_submit=False):
+        pwd = st.text_input(
+            "Dashboard password",
+            type="password",
+            placeholder="Type password from Streamlit Secrets",
+        )
+        submitted = st.form_submit_button(
+            "Enter dashboard",
+            type="primary",
+            use_container_width=True,
+        )
+
+    if submitted:
+        typed = (pwd or "").strip()
+        if typed == expected:
             st.session_state["authenticated"] = True
+            st.success("Login OK — loading…")
             st.rerun()
         else:
-            st.error("Wrong password — set DASHBOARD_PASSWORD in Secrets / .env")
-    st.info("Free stack: Gemini + open-source ScrapeGraphAI + Google Sheets. Product-ad shops score highest.")
+            st.error(
+                "Wrong password.\n\n"
+                "Fix: Streamlit app → ⋮ → Settings → Secrets → set\n"
+                '`DASHBOARD_PASSWORD = "your-password"`\n'
+                "then Save and try again.\n\n"
+                f"(Expected password length: {len(expected)} characters. "
+                f"You typed: {len(typed)} characters.)"
+            )
+            if expected == "change-me-now":
+                st.warning(
+                    "No DASHBOARD_PASSWORD found in Secrets. "
+                    "Default is exactly: change-me-now"
+                )
+
+    # One-tap demo unlock if still on default (helps phone testing)
+    if expected == "change-me-now":
+        st.caption("Default password is: `change-me-now`")
+        if st.button("🚀 Open with default password", use_container_width=True):
+            st.session_state["authenticated"] = True
+            st.rerun()
+
+    st.info(
+        "Tip: password must match Secrets exactly (no extra spaces). "
+        "After changing Secrets, wait 10s or Reboot the app."
+    )
     return False
 
 

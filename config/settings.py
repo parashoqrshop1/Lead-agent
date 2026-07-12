@@ -75,7 +75,7 @@ def get_settings() -> dict[str, Any]:
         "llm_api_key": api_key,
         "scraper_mode": scraper_mode,
         "scrapegraph_api_key": _secret("SCRAPEGRAPH_API_KEY"),
-        "dashboard_password": _secret("DASHBOARD_PASSWORD", "change-me-now"),
+        "dashboard_password": _secret("DASHBOARD_PASSWORD", "change-me-now") or "change-me-now",
         "agency_name": _secret("AGENCY_NAME", "Your Web Agency"),
         "agency_website": _secret("AGENCY_WEBSITE", "https://your-agency.com"),
         "agency_email": _secret("AGENCY_EMAIL", "hello@your-agency.com"),
