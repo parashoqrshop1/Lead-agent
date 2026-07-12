@@ -1,0 +1,2 @@
+# System packages for Streamlit Cloud / some Linux hosts (Playwright deps if open_source)
+# Leave empty-friendly; cloud_api mode does not need browser packages.
